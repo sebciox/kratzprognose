@@ -849,7 +849,7 @@ export default function App() {
                   <div>
                     <h3 className="text-lg font-bold tracking-tight">{cap(day.early)} im Verlauf</h3>
                     <p className="mt-1 text-xs text-slate-400">
-                      4 bis 10 Uhr · Abfahrt {analysis.departLabel} Uhr · tippe auf eine Uhrzeit für Details
+                      {analysis.morningHours[0]?.hour ?? 4} bis 10 Uhr · Abfahrt {analysis.departLabel} Uhr · tippe auf eine Uhrzeit für Details
                       {offset === 0 ? " · bereits vergangene Stunden sind Modellwerte, keine Messung" : ""}
                     </p>
                   </div>
