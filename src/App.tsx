@@ -24,8 +24,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  Snowflake,
-  Sparkles,
   Sun,
   Sunrise,
   Thermometer,
@@ -94,76 +92,52 @@ const VERDICT: Record<
   RiskLevel,
   {
     badge: string;
-    headline: string;
     description: (day: DayOffset) => string;
-    tip: (day: DayOffset) => string;
     color: string;
     glow: string;
     text: string;
     chip: string;
-    iconBox: string;
     bar: string;
   }
 > = {
   high: {
     badge: "Hohes Frost-Risiko",
-    headline: "Ja, du musst kratzen.",
     description: () =>
       "In der Nacht und am frühen Morgen sinkt die Temperatur unter den Gefrierpunkt – bei ausreichend Feuchtigkeit bildet sich Raureif oder eine Eisschicht auf der Scheibe.",
-    tip: (d) =>
-      d === 0
-        ? "Eiskratzer und Enteiser griffbereit haben und 5–10 Minuten mehr Zeit einplanen."
-        : "Eiskratzer und Enteiser bereitlegen und 5–10 Minuten früher losfahren. Eine Scheibenabdeckung am Vorabend spart Arbeit.",
     color: "#67e8f9",
     glow: "rgba(103,232,249,0.28)",
     text: "text-cyan-200",
     chip: "border-cyan-300/25 bg-cyan-300/10 text-cyan-100",
-    iconBox: "from-cyan-300/30 to-sky-500/10 border-cyan-200/30 text-cyan-200",
     bar: "from-cyan-300 to-sky-400",
   },
   medium: {
     badge: "Wahrscheinlich",
-    headline: "Besser drauf vorbereitet sein.",
     description: () =>
       "Die Werte liegen nah am Gefrierpunkt. Vor allem an windstillen, klaren Stellen kann sich über Nacht Reif auf dem Glas bilden.",
-    tip: (d) => `Den Eiskratzer griffbereit legen und ${DAY_WORDS[d].early} kurz prüfen, bevor du losfährst.`,
     color: "#fbbf24",
     glow: "rgba(251,191,36,0.24)",
     text: "text-amber-200",
     chip: "border-amber-300/25 bg-amber-300/10 text-amber-100",
-    iconBox: "from-amber-300/30 to-orange-500/10 border-amber-200/30 text-amber-200",
     bar: "from-amber-300 to-orange-400",
   },
   low: {
     badge: "Geringes Risiko",
-    headline: "Eher nicht – kurz checken.",
     description: () =>
       "Überwiegend zu mild für eine geschlossene Eisschicht. In kühlen Ecken oder nach nächtlichem Regen kann dennoch ein Hauch Reif entstehen.",
-    tip: (d) =>
-      d === 0
-        ? "Ein kurzer Blick auf die Scheibe reicht, bevor du losfährst."
-        : "Ein kurzer Blick auf die Scheibe reicht. Die Prognose am Vorabend noch einmal ansehen, falls es kälter wird.",
     color: "#93c5fd",
     glow: "rgba(147,197,253,0.2)",
     text: "text-blue-200",
     chip: "border-blue-300/25 bg-blue-300/10 text-blue-100",
-    iconBox: "from-blue-300/30 to-indigo-500/10 border-blue-200/30 text-blue-200",
     bar: "from-blue-300 to-indigo-400",
   },
   none: {
     badge: "Kein Frost in Sicht",
-    headline: "Nein, entspannt bleiben.",
     description: (d) =>
       `Die Nacht bleibt zu warm für Raureif oder Eis auf der Windschutzscheibe. Du kannst ${DAY_WORDS[d].early} voraussichtlich direkt losfahren.`,
-    tip: (d) =>
-      d === 0
-        ? "Genieß den entspannten Start."
-        : "Genieß den entspannten Start. Falls sich die Prognose ändert, aktualisiere sie einfach am Vorabend.",
     color: "#6ee7b7",
     glow: "rgba(110,231,183,0.22)",
     text: "text-emerald-200",
     chip: "border-emerald-300/25 bg-emerald-300/10 text-emerald-100",
-    iconBox: "from-emerald-300/30 to-teal-500/10 border-emerald-200/30 text-emerald-200",
     bar: "from-emerald-300 to-teal-400",
   },
 };
@@ -234,15 +208,15 @@ function WeatherIcon({ code, className = "h-5 w-5" }: { code: number; className?
   return <Cloud {...props} />;
 }
 
-function RiskGauge({ score, level, compact = false }: { score: number; level: RiskLevel; compact?: boolean }) {
+function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   const c = VERDICT[level].color;
-  const radius = 78;
+  const radius = 84;
   const circumference = 2 * Math.PI * radius;
   return (
-    <div className={`relative mx-auto ${compact ? "h-[116px] w-[116px] sm:h-[150px] sm:w-[150px]" : "h-[210px] w-[210px]"}`}>
+    <div className="relative mx-auto aspect-square w-full max-w-[440px]">
       <div
-        className="absolute inset-4 rounded-full blur-2xl transition-colors duration-700"
-        style={{ background: VERDICT[level].glow, opacity: 0.45 }}
+        className="absolute inset-6 rounded-full blur-3xl transition-colors duration-700"
+        style={{ background: VERDICT[level].glow, opacity: 0.55 }}
       />
       <svg viewBox="0 0 200 200" className="relative h-full w-full -rotate-90">
         <defs>
@@ -251,46 +225,23 @@ function RiskGauge({ score, level, compact = false }: { score: number; level: Ri
             <stop offset="100%" stopColor={c} />
           </linearGradient>
         </defs>
-        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="9" />
+        <circle cx="100" cy="100" r={radius} fill="none" stroke="rgba(255,255,255,0.09)" strokeWidth="8" />
         <circle
           cx="100"
           cy="100"
           r={radius}
           fill="none"
           stroke="url(#gaugeGradient)"
-          strokeWidth="9"
+          strokeWidth="8"
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - score / 100)}
           style={{ transition: "stroke-dashoffset 1.1s cubic-bezier(0.22,1,0.36,1)" }}
         />
-        {Array.from({ length: 36 }).map((_, i) => {
-          const a = (i / 36) * Math.PI * 2;
-          const inner = 60;
-          const outer = i / 36 <= score / 100 ? 65 : 63;
-          return (
-            <line
-              key={i}
-              x1={100 + Math.cos(a) * inner}
-              y1={100 + Math.sin(a) * inner}
-              x2={100 + Math.cos(a) * outer}
-              y2={100 + Math.sin(a) * outer}
-              stroke={c}
-              strokeOpacity={i / 36 <= score / 100 ? 0.55 : 0.13}
-              strokeWidth="1.4"
-            />
-          );
-        })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Risiko</span>
-        <span className={`font-extrabold tracking-tight text-white tabular-nums ${compact ? "mt-0.5 text-3xl sm:text-4xl" : "mt-1 text-5xl"}`}>{score}</span>
-        <span className="text-[11px] font-medium text-slate-400">von 100</span>
-        {!compact && (
-          <span className="mt-3 rounded-full border px-3 py-1 text-[11px] font-semibold" style={{ color: c, borderColor: `${c}55`, background: `${c}14` }}>
-            {VERDICT[level].badge}
-          </span>
-        )}
+        <span className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Risiko</span>
+        <span className="mt-1 text-[5.5rem] font-extrabold leading-none tracking-tight text-white tabular-nums sm:text-[7rem]">{score}</span>
       </div>
     </div>
   );
@@ -428,6 +379,7 @@ export default function App() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [showDetails, setShowDetails] = useState<boolean>(() => readStored<boolean>(STORAGE_DETAILS, false) === true);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const searchRef = useRef<HTMLDivElement>(null);
@@ -524,6 +476,7 @@ export default function App() {
     setResults([]);
     setSearchOpen(false);
     setSettingsOpen(false);
+    setEditOpen(false);
     setSelectedTime(null);
     setChecked({});
   };
@@ -590,7 +543,7 @@ export default function App() {
   const selectedHour = analysis?.morningHours.find((h) => h.time === selectedTime) ?? analysis?.departure ?? null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#050b19] text-slate-100">
+    <div className="relative min-h-[100dvh] overflow-hidden bg-[#050b19] text-slate-100">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_50%_-10%,rgba(56,140,220,0.28),transparent_70%)]" />
         <div className="absolute -left-40 top-64 h-[420px] w-[420px] rounded-full bg-sky-500/10 blur-[120px]" />
@@ -599,66 +552,23 @@ export default function App() {
       </div>
       <SnowBackground />
 
-      <div className="relative mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
-        {/* Header */}
-        <header className="flex items-center justify-between gap-3 py-5 sm:py-7">
-          <div className="flex items-center gap-3">
-            <div className="animate-drift flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/25 bg-gradient-to-br from-cyan-300/25 to-sky-600/10 shadow-[0_0_35px_-8px_rgba(103,232,249,0.55)]">
-              <Snowflake className="h-6 w-6 text-cyan-200" strokeWidth={1.7} />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-cyan-200/60">Kratzprognose</p>
-              <h1 className="text-lg font-extrabold tracking-tight sm:text-xl">Muss ich {day.title} kratzen?</h1>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {demo && (
-              <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-200">
-                Demo-Daten
-              </span>
-            )}
-            {forecast?.current && (
-              <div className="glass-soft hidden items-center gap-2 rounded-full px-3.5 py-2 text-sm sm:flex">
-                <WeatherIcon code={forecast.current.weather_code} className="h-4 w-4 text-cyan-200" />
-                <span className="text-slate-400">Jetzt in {place.name}</span>
-                <span className="font-bold text-white">{fmtTemp(forecast.current.temperature_2m)}</span>
-              </div>
-            )}
-            <button
-              onClick={() => setReloadToken((n) => n + 1)}
-              title="Prognose aktualisieren"
-              className="glass-soft flex h-9 w-9 items-center justify-center rounded-full text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-            <button
-              onClick={() => setSettingsOpen((v) => !v)}
-              title="Einstellungen"
-              aria-label="Einstellungen"
-              aria-expanded={settingsOpen}
-              className={`glass-soft flex h-9 w-9 items-center justify-center rounded-full transition hover:border-cyan-300/40 hover:text-cyan-200 ${settingsOpen ? "border-cyan-300/40 text-cyan-200" : "text-slate-300"}`}
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-          </div>
-        </header>
-
-        {/* Ort: zeigt, für welche Region die Aussage gilt; Antippen öffnet die Einstellungen */}
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-3xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6">
+        {/* Oben: Ort · Uhrzeit · Tag. Antippen zum Ändern. */}
         <button
-          onClick={() => setSettingsOpen((v) => !v)}
-          aria-expanded={settingsOpen}
-          aria-label="Ort und Einstellungen"
-          className="glass-soft flex w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-left transition hover:border-cyan-300/40"
+          onClick={() => setEditOpen((v) => !v)}
+          aria-expanded={editOpen}
+          aria-label="Ort, Uhrzeit und Tag ändern"
+          className="glass-soft relative z-30 flex w-full items-center gap-2.5 rounded-2xl px-4 py-3.5 text-left transition hover:border-cyan-300/40"
         >
           <MapPin className="h-4 w-4 shrink-0 text-cyan-300" />
-          <span className="min-w-0 flex-1 truncate">
-            <span className="text-sm font-bold text-white">{place.name}</span>
-            {placeSub && <span className="text-xs text-slate-400"> · {placeSub}</span>}
+          <span className="min-w-0 flex-1 truncate text-base font-bold text-white">
+            {place.name}
+            <span className="font-semibold text-slate-300"> · {fmtClock(depart)} Uhr · {day.tab}</span>
           </span>
+          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${editOpen ? "rotate-180" : ""}`} />
         </button>
 
-        {/* Einstellungen: Ortssuche, GPS und gemerkte Orte */}
-        {settingsOpen && (
+        {editOpen && (
           <div className="glass relative z-30 mt-3 flex flex-col gap-3 rounded-2xl p-2.5">
             <div ref={searchRef} className="relative">
               <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 ring-1 ring-white/5 transition focus-within:ring-cyan-300/35">
@@ -689,7 +599,7 @@ export default function App() {
                 {searching && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-300" />}
               </div>
               {searchOpen && (query.length >= 2 || results.length > 0) && (
-                <div className="glass absolute left-0 right-0 top-[calc(100%+8px)] max-h-72 overflow-y-auto rounded-2xl p-1.5 shadow-2xl">
+                <div className="glass absolute left-0 right-0 top-[calc(100%+8px)] z-40 max-h-72 overflow-y-auto rounded-2xl p-1.5 shadow-2xl">
                   {results.length > 0 ? (
                     results.map((r) => (
                       <button
@@ -716,7 +626,6 @@ export default function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="mr-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">Ort</span>
               {([
                 { key: "home" as const, label: home.name, icon: MapPin, onClick: () => selectPlace(home) },
                 { key: "gps" as const, label: gps ? `GPS · ${gps.name}` : "GPS-Standort", icon: LocateFixed, onClick: selectGps },
@@ -730,57 +639,51 @@ export default function App() {
                   {c.label}
                 </button>
               ))}
-              <button
-                onClick={useGeolocation}
-                disabled={geoLoading}
-                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:opacity-60"
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label
+                className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition focus-within:border-cyan-300/40 hover:border-cyan-300/40"
+                title="Abfahrtszeit"
               >
-                {geoLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
-                Standort neu bestimmen
-              </button>
+                <Clock className="h-4 w-4 shrink-0 text-amber-300" />
+                <select
+                  value={depart}
+                  onChange={(e) => {
+                    setDepart(normalizeDepart(Number(e.target.value)));
+                    setSelectedTime(null);
+                  }}
+                  aria-label="Abfahrtszeit"
+                  className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
+                >
+                  {DEPART_OPTIONS.map((m) => (
+                    <option key={m} value={m} className="bg-[#0a1428] text-white">
+                      {fmtClock(m)} Uhr
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="glass-soft flex rounded-xl p-1">
+                {([0, 1, 2] as const).map((o) => (
+                  <button
+                    key={o}
+                    onClick={() => { setOffset(o); setSelectedTime(null); }}
+                    className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:px-3.5 ${offset === o ? "bg-cyan-300/15 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.25)]" : "text-slate-400 hover:text-white"}`}
+                  >
+                    {DAY_WORDS[o].tab}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Abfahrtszeit und Tag */}
-        <div className="glass relative z-20 mt-3 flex flex-wrap items-center gap-2 rounded-2xl p-2.5">
-          <label
-            className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition focus-within:border-cyan-300/40 hover:border-cyan-300/40"
-            title="Abfahrtszeit"
-          >
-            <Clock className="h-4 w-4 shrink-0 text-amber-300" />
-            <span className="hidden sm:inline">Abfahrt</span>
-            <select
-              value={depart}
-              onChange={(e) => {
-                setDepart(normalizeDepart(Number(e.target.value)));
-                setSelectedTime(null);
-              }}
-              aria-label="Abfahrtszeit"
-              className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
-            >
-              {DEPART_OPTIONS.map((m) => (
-                <option key={m} value={m} className="bg-[#0a1428] text-white">
-                  {fmtClock(m)} Uhr
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="glass-soft flex rounded-xl p-1">
-            {([0, 1, 2] as const).map((o) => (
-              <button
-                key={o}
-                onClick={() => { setOffset(o); setSelectedTime(null); }}
-                className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:px-3.5 ${offset === o ? "bg-cyan-300/15 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.25)]" : "text-slate-400 hover:text-white"}`}
-              >
-                {DAY_WORDS[o].tab}
-              </button>
-            ))}
-          </div>
-        </div>
+        {demo && (
+          <p className="mt-3 text-center text-[11px] font-bold uppercase tracking-wider text-amber-200">Demo-Daten · keine Live-Prognose</p>
+        )}
 
         {error && (
-          <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-5 py-4 text-sm text-amber-100">
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-5 py-4 text-sm text-amber-100">
             <AlertTriangle className="h-5 w-5 shrink-0" />
             <span className="flex-1">{error}</span>
             <button onClick={() => { setError(null); setReloadToken((n) => n + 1); }} className="rounded-lg bg-white/10 px-3 py-1.5 font-semibold hover:bg-white/20">
@@ -789,67 +692,92 @@ export default function App() {
           </div>
         )}
 
-        {/* Verdict */}
-        {loading && !analysis ? (
-          <div className="glass mt-6 animate-pulse rounded-[28px] p-10">
-            <div className="h-3 w-40 rounded-full bg-white/10" />
-            <div className="mt-7 h-12 w-2/3 rounded-2xl bg-white/10" />
-            <div className="mt-5 h-4 w-5/6 rounded-full bg-white/10" />
-            <div className="mt-2 h-4 w-3/5 rounded-full bg-white/10" />
-            <div className="mt-10 flex gap-3">
-              <div className="h-12 flex-1 rounded-xl bg-white/5" /><div className="h-12 flex-1 rounded-xl bg-white/5" /><div className="h-12 flex-1 rounded-xl bg-white/5" />
+        {/* Mitte: der Risiko-Kreis, fast bildschirmbreit */}
+        <div className="flex flex-1 flex-col items-center justify-center py-6">
+          {loading && !analysis ? (
+            <div className="aspect-square w-full max-w-[440px] animate-pulse rounded-full border-[10px] border-white/10" />
+          ) : analysis ? (
+            <div className="animate-rise flex w-full flex-col items-center" key={`${place.id}-${offset}`}>
+              <RiskGauge score={analysis.score} level={level} />
+              <p className="mt-5 text-center text-2xl font-extrabold tracking-tight" style={{ color: verdict.color }}>
+                {verdict.badge}
+              </p>
             </div>
-          </div>
-        ) : analysis ? (
-          <>
-            <section className="glass hero-photo animate-rise relative mt-4 overflow-hidden rounded-[28px]" key={`${place.id}-${offset}`}>
-              <div
-                className="animate-breathe pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full blur-[90px]"
-                style={{ background: verdict.glow }}
-              />
-              <div className="relative p-6 sm:p-9">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${verdict.chip}`}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    {verdict.badge}
-                  </span>
-                  <span className="text-xs font-medium text-slate-400">
-                    <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />
-                    {analysis.dateLabel} · {analysis.departLabel} Uhr
-                  </span>
-                </div>
-                <div className="mt-5 flex items-center gap-4">
-                  <h2 className="shimmer-text min-w-0 flex-1 text-[2rem] font-extrabold leading-[1.12] tracking-tight sm:text-5xl">
-                    {verdict.headline}
-                  </h2>
-                  <div className="shrink-0">
-                    <RiskGauge score={analysis.score} level={level} compact />
-                  </div>
-                </div>
-                <div className="mt-6 flex max-w-2xl items-start gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-gradient-to-br ${verdict.iconBox}`}>
-                    <Sparkles className="h-4.5 w-4.5" />
-                  </div>
-                  <p className="text-sm leading-relaxed text-slate-200">
-                    <span className="mr-1 font-bold" style={{ color: verdict.color }}>Tipp:</span> {verdict.tip(offset)}
-                  </p>
-                </div>
+          ) : (
+            !error && (
+              <div className="text-center">
+                <AlertTriangle className="mx-auto h-8 w-8 text-amber-300" />
+                <h2 className="mt-4 text-xl font-bold">Keine Prognose verfügbar</h2>
+                <p className="mt-2 text-sm text-slate-400">Bitte lade die Wetterdaten erneut.</p>
+                <button onClick={() => setReloadToken((n) => n + 1)} className="mt-5 rounded-xl bg-cyan-300/15 px-5 py-2.5 text-sm font-bold text-cyan-100 hover:bg-cyan-300/25">
+                  Aktualisieren
+                </button>
               </div>
-            </section>
+            )
+          )}
+        </div>
 
+        {/* Unten: Einstellungen, Details und Zahnrad */}
+        {settingsOpen && (
+          <div className="glass mb-3 flex flex-col gap-2 rounded-2xl p-3">
             <button
-              onClick={() => setShowDetails((v) => !v)}
-              aria-expanded={showDetails}
-              className="glass-soft mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-100"
+              onClick={() => setReloadToken((n) => n + 1)}
+              className="glass-soft flex items-center gap-2.5 rounded-xl px-3.5 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-cyan-300/40"
             >
-              {showDetails ? "Details ausblenden" : "Details anzeigen"}
-              <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+              <RefreshCw className={`h-4 w-4 text-cyan-300 ${loading ? "animate-spin" : ""}`} />
+              Prognose aktualisieren
             </button>
+            <button
+              onClick={useGeolocation}
+              disabled={geoLoading}
+              className="glass-soft flex items-center gap-2.5 rounded-xl px-3.5 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-cyan-300/40 disabled:opacity-60"
+            >
+              {geoLoading ? <Loader2 className="h-4 w-4 animate-spin text-cyan-300" /> : <LocateFixed className="h-4 w-4 text-cyan-300" />}
+              Standort neu bestimmen
+            </button>
+            <p className="flex items-center gap-2 px-1 pt-1 text-[11px] text-slate-500">
+              <Info className="h-3.5 w-3.5 shrink-0" />
+              {demo
+                ? "Beispielwerte – keine Live-Prognose"
+                : `Stand: ${updatedAt ? updatedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–"} Uhr`}
+            </p>
+          </div>
+        )}
+        <div className="flex items-stretch gap-2">
+          <button
+            onClick={() => setShowDetails((v) => !v)}
+            aria-expanded={showDetails}
+            className="glass-soft flex flex-1 items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-100"
+          >
+            {showDetails ? "Details ausblenden" : "Details anzeigen"}
+            <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+          </button>
+          <button
+            onClick={() => setSettingsOpen((v) => !v)}
+            title="Einstellungen"
+            aria-label="Einstellungen"
+            aria-expanded={settingsOpen}
+            className={`glass-soft flex w-14 shrink-0 items-center justify-center rounded-2xl transition hover:border-cyan-300/40 hover:text-cyan-200 ${settingsOpen ? "border-cyan-300/40 text-cyan-200" : "text-slate-300"}`}
+          >
+            <Settings className="h-5 w-5" />
+          </button>
+        </div>
 
-            {showDetails && (
-              <>
+        {showDetails && analysis && (
+          <div className="mt-2">
             <section className="glass mt-5 overflow-hidden rounded-[24px]">
-              <p className="px-6 pt-6 text-sm leading-relaxed text-slate-300 sm:px-8">{verdict.description(offset)}</p>
+              <div className="flex flex-wrap items-center gap-2.5 px-6 pt-6 sm:px-8">
+                <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${verdict.chip}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {verdict.badge}
+                </span>
+                <span className="text-xs font-medium text-slate-400">
+                  <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />
+                  {analysis.dateLabel} · Abfahrt {analysis.departLabel} Uhr
+                </span>
+              </div>
+              <p className="px-6 pt-2 text-xs text-slate-500 sm:px-8">{[place.name, placeSub].filter(Boolean).join(", ")}</p>
+              <p className="px-6 pt-4 text-sm leading-relaxed text-slate-300 sm:px-8">{verdict.description(offset)}</p>
               <div className="flex flex-wrap gap-2 px-6 pb-6 pt-4 sm:px-8">
                 <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.chip}`}>
                   <ThermometerSnowflake className="mr-1.5 inline h-3.5 w-3.5" />
@@ -1033,30 +961,11 @@ export default function App() {
                 </div>
               </section>
             </div>
-              </>
-            )}
-          </>
-        ) : (
-          !error && (
-            <div className="glass mt-6 rounded-[28px] p-10 text-center">
-              <AlertTriangle className="mx-auto h-8 w-8 text-amber-300" />
-              <h2 className="mt-4 text-xl font-bold">Keine Prognose verfügbar</h2>
-              <p className="mt-2 text-sm text-slate-400">Bitte lade die Wetterdaten erneut.</p>
-              <button onClick={() => setReloadToken((n) => n + 1)} className="mt-5 rounded-xl bg-cyan-300/15 px-5 py-2.5 text-sm font-bold text-cyan-100 hover:bg-cyan-300/25">
-                Aktualisieren
-              </button>
-            </div>
-          )
+            <p className="mt-6 text-center text-xs text-slate-500">
+              {demo ? "Demo-Modus: Live-Wetterdaten gerade nicht erreichbar." : "Wetterdaten von Open-Meteo · Prognosen können sich kurzfristig ändern."}
+            </p>
+          </div>
         )}
-
-        <footer className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-6 text-center text-xs text-slate-500 sm:flex-row sm:text-left">
-          <p>
-            {demo ? "Demo-Modus: Live-Wetterdaten gerade nicht erreichbar." : "Wetterdaten von Open-Meteo · Prognosen können sich kurzfristig ändern."}
-          </p>
-          <p className="flex items-center gap-1.5">
-            <Snowflake className="h-3.5 w-3.5 text-cyan-300/70" /> Kratzprognose · für entspannte Wintermorgen
-          </p>
-        </footer>
       </div>
     </div>
   );
