@@ -302,6 +302,8 @@ function interpolateDeparture(
   const idx = scored.findIndex((h) => h.time === `${dayKey}T${String(hour).padStart(2, "0")}:00`);
   const a = idx >= 0 ? scored[idx] : undefined;
   if (!a) return { ...fallback, time: `${dayKey}T${fmtClock(departMin)}`, hour };
+  // Volle Stunde: genau der Stundenwert, damit Zahl und Diagramm übereinstimmen.
+  if (frac === 0) return { ...a };
   const b = scored[idx + 1] ?? a;
   const mix = (x: number, y: number) => x + (y - x) * frac;
   const raw = {
@@ -354,7 +356,7 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
   const scoredNight = [...scored.filter((h) => h.time.startsWith(dayKey) && h.hour * 60 <= departMin), departure];
   const coldest = [...scoredNight].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
 
-  // Für die Bewertung zählt, was in den Stunden vor der Abfahrt auf der Scheibe liegen kann.
+  // Die Stunden kurz vor der Abfahrt (für die Anzeige des Verlaufs und die kälteste Scheibe).
   const windowHours = [
     ...scored.filter(
       (h) =>
@@ -362,25 +364,14 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
     ),
     departure,
   ];
-  // Frost, der sich früher in der Nacht gebildet hat, bleibt nur, solange die Scheibe danach
-  // nicht wärmer wird. Liegt sie später über etwa 2 °C, ist er bis zur Abfahrt wieder getaut.
-  const withKeep = windowHours.map((h, i) => {
-    const laterMax = windowHours.slice(i + 1).reduce((m, x) => Math.max(m, glassTemp(x)), -Infinity);
-    const keep = i === windowHours.length - 1 ? 1 : 1 - clamp(laterMax / 2);
-    return { h, keep, eff: h.risk * keep };
-  });
-  const best = [...withKeep].sort((a, b) => b.eff - a.eff)[0];
-  const worst = best?.h ?? fallback;
-  const coldestEntry = [...withKeep].sort((a, b) => glassTemp(a.h) - glassTemp(b.h))[0];
-  const windowColdest = coldestEntry?.h ?? fallback;
+  // Höchstes Risiko in den Stunden vor der Abfahrt (nur zur Anzeige) und kälteste Scheibe.
+  const worst = [...windowHours].sort((a, b) => b.risk - a.risk)[0] ?? fallback;
+  const windowColdest = [...windowHours].sort((a, b) => glassTemp(a) - glassTemp(b))[0] ?? fallback;
   const coldestGlass = glassTemp(windowColdest);
 
-  let score = best?.eff ?? 0;
-  for (const { h, keep } of withKeep) {
-    if (glassTemp(h) <= 0 && h.humidity >= 70) score = Math.max(score, 50 * keep);
-  }
-  if (coldestGlass >= 4) score = Math.min(score, 12);
-  if (coldestGlass <= -1 && nightPrecip > 0.1) score = Math.max(score, 70 * (coldestEntry?.keep ?? 1));
+  // Die Zahl gilt für die eingestellte Abfahrtszeit: das Risiko genau zu diesem Zeitpunkt,
+  // berechnet aus den auf diese Minute interpolierten Wetterwerten.
+  const score = departure.risk;
 
   const avgHumidity = Math.round(night.reduce((s, h) => s + h.humidity, 0) / Math.max(1, night.length));
   const avgCloud = Math.round(night.reduce((s, h) => s + h.cloud, 0) / Math.max(1, night.length));

@@ -814,7 +814,7 @@ export default function App() {
                 </span>
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
                   <Clock className="mr-1.5 inline h-3.5 w-3.5" />
-                  Kritisch um {analysis.worst.time.startsWith(analysis.dateKey) ? analysis.worst.time.slice(11, 16) : analysis.coldest.time.slice(11, 16)} Uhr
+                  Höchstes Risiko vor der Abfahrt: {analysis.worst.time.slice(11, 16)} Uhr ({analysis.worst.risk}/100)
                 </span>
               </div>
               <div className="grid grid-cols-1 divide-y divide-white/10 border-t border-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
