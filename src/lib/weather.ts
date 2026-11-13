@@ -224,25 +224,38 @@ function rawHours(fc: Forecast): Omit<HourData, "risk">[] {
 
 const FROZEN_CODES = [56, 57, 66, 67, 71, 73, 75, 77, 85, 86];
 
-function hourRisk(h: Omit<HourData, "risk">, wetBonus: number): number {
-  const t = h.temp;
-  const spread = t - h.dew;
-  let score = clamp((3.5 - t) / 8) * 52;
+/**
+ * Wie viel kälter als die Luft die Autoscheibe wird (°C).
+ * Glas strahlt Wärme zum Himmel ab: bei klarem, ruhigem Himmel um etwa 3–4 °C kälter als die Luft,
+ * bei Wolken, Wind oder Regen deutlich weniger. Deshalb kann die Scheibe vereisen, obwohl die
+ * Wetterstation noch plus 2–3 °C zeigt.
+ */
+export function glassCooling(h: Pick<HourData, "cloud" | "wind" | "precip">): number {
+  const clear = Math.pow(clamp(1 - h.cloud / 100), 1.3);
+  const calm = clamp(1.15 - h.wind / 25, 0.2, 1);
+  const rain = h.precip > 0.2 ? 0.4 : 1;
+  return 3.8 * clear * calm * rain;
+}
 
-  if (t < 3) {
-    // Je kälter, desto stärker wirkt die vorhandene Feuchtigkeit.
-    const coldness = clamp((3 - t) / 3);
-    let moisture = clamp((h.humidity - 55) / 35) * 18 + clamp((5 - spread) / 5) * 12;
-    if (h.dew <= 0 && spread <= 3) moisture += 5;
-    // Bei klarem, windstillem Himmel kühlt die Scheibe stärker aus als die Luft.
-    if (h.cloud < 40) moisture += 6;
-    if (h.wind < 10) moisture += 4;
+/** Geschätzte Scheibentemperatur. */
+export const glassTemp = (h: Pick<HourData, "temp" | "cloud" | "wind" | "precip">) => h.temp - glassCooling(h);
+
+function hourRisk(h: Omit<HourData, "risk">, wetBonus: number): number {
+  // Entscheidend ist die Temperatur der Scheibe, nicht die der Luft.
+  const g = glassTemp(h);
+  let score = clamp((2 - g) / 6) * 60;
+
+  if (g < 1.5) {
+    // Je kälter die Scheibe, desto stärker wirkt die Feuchtigkeit. Liegt die Scheibe unter dem
+    // Taupunkt, schlägt sich Wasser nieder und gefriert.
+    const coldness = clamp((1.5 - g) / 2.5);
+    const moisture = clamp((h.humidity - 55) / 35) * 14 + clamp((h.dew - g) / 3) * 16;
     score += moisture * coldness;
     // Feuchtigkeit aus Regen/Schnee der letzten Stunden gefriert auf der Scheibe.
-    score += wetBonus * clamp((1.5 - t) / 2.5);
+    score += wetBonus * clamp((1 - g) / 2.5);
   }
-  if (h.precip > 0 && t <= 1.5) score += Math.min(16, 7 + h.precip * 9);
-  if (FROZEN_CODES.includes(h.code) && t <= 2) score += 12;
+  if (h.precip > 0 && g <= 1.5) score += Math.min(16, 7 + h.precip * 9);
+  if (FROZEN_CODES.includes(h.code) && g <= 2) score += 12;
   return Math.round(clamp(score, 0, 100));
 }
 
@@ -330,12 +343,13 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
     departure,
   ];
   const worst = [...windowHours].sort((a, b) => b.risk - a.risk)[0] ?? fallback;
-  const windowColdest = [...windowHours].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
+  const windowColdest = [...windowHours].sort((a, b) => glassTemp(a) - glassTemp(b))[0] ?? fallback;
+  const coldestGlass = glassTemp(windowColdest);
 
   let score = worst.risk;
-  if (windowColdest.temp <= 0 && windowColdest.humidity >= 70) score = Math.max(score, 45);
-  if (windowColdest.temp >= 5) score = Math.min(score, 12);
-  if (windowColdest.temp <= -1 && nightPrecip > 0.1) score = Math.max(score, 70);
+  if (coldestGlass <= 0 && windowColdest.humidity >= 70) score = Math.max(score, 50);
+  if (coldestGlass >= 4) score = Math.min(score, 12);
+  if (coldestGlass <= -1 && nightPrecip > 0.1) score = Math.max(score, 70);
 
   const avgHumidity = Math.round(night.reduce((s, h) => s + h.humidity, 0) / Math.max(1, night.length));
   const avgCloud = Math.round(night.reduce((s, h) => s + h.cloud, 0) / Math.max(1, night.length));
@@ -358,14 +372,16 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
     {
       key: "temp",
       label: "Tiefsttemperatur",
-      value: `${fmtTemp(coldest.temp)} um ${coldest.time.slice(11, 16)} Uhr`,
+      value: `${fmtTemp(coldest.temp)} Luft · Scheibe bis ${fmtTemp(coldestGlass)}`,
       detail:
-        coldest.temp <= 0
-          ? "Unter dem Gefrierpunkt – die Scheibe kann vereisen."
-          : coldest.temp <= 2
-            ? "Knapp über Null: Bei klarem Himmel kühlt Glas stärker aus als die Luft."
+        coldestGlass <= 0
+          ? coldest.temp > 0
+            ? "Die Luft ist noch im Plus, die Scheibe kühlt aber bei klarem, ruhigem Himmel unter 0 °C ab."
+            : "Unter dem Gefrierpunkt – die Scheibe kann vereisen."
+          : coldestGlass <= 2
+            ? "Knapp über Null: Die Scheibe kann bei klarem Himmel noch unter den Gefrierpunkt rutschen."
             : "Zu mild für eine Eisschicht.",
-      strength: clamp((4 - coldest.temp) / 8),
+      strength: clamp((3 - coldestGlass) / 7),
       hint: "cold",
     },
     {

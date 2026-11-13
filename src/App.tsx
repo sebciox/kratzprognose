@@ -213,7 +213,7 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   const radius = 84;
   const circumference = 2 * Math.PI * radius;
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[440px]">
+    <div className="relative mx-auto aspect-square w-full max-w-[min(440px,50dvh)]">
       <div
         className="absolute inset-6 rounded-full blur-3xl transition-colors duration-700"
         style={{ background: VERDICT[level].glow, opacity: 0.55 }}
@@ -525,11 +525,17 @@ export default function App() {
         resetView();
         setGeoLoading(false);
       },
-      () => {
-        setError("Standort nicht freigegeben. Du kannst stattdessen eine Stadt suchen.");
+      (err) => {
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? "Standort nicht freigegeben. Am iPhone: Einstellungen › Datenschutz & Sicherheit › Ortungsdienste › Safari-Websites › „Beim Verwenden der App“. Danach die App neu öffnen. Oder such eine Stadt."
+            : err.code === err.TIMEOUT
+              ? "Die Standortbestimmung hat zu lange gedauert. Bitte versuch es noch einmal oder such eine Stadt."
+              : "Der Standort konnte nicht bestimmt werden. Versuch es noch einmal oder such eine Stadt."
+        );
         setGeoLoading(false);
       },
-      { timeout: 10000, maximumAge: 600000 }
+      { timeout: 15000, maximumAge: 600000 }
     );
   };
 
@@ -543,7 +549,7 @@ export default function App() {
   const selectedHour = analysis?.morningHours.find((h) => h.time === selectedTime) ?? analysis?.departure ?? null;
 
   return (
-    <div className="relative min-h-[100dvh] overflow-hidden bg-[#050b19] text-slate-100">
+    <div className="relative min-h-[100svh] overflow-hidden bg-[#050b19] text-slate-100">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_50%_-10%,rgba(56,140,220,0.28),transparent_70%)]" />
         <div className="absolute -left-40 top-64 h-[420px] w-[420px] rounded-full bg-sky-500/10 blur-[120px]" />
@@ -552,16 +558,16 @@ export default function App() {
       </div>
       <SnowBackground />
 
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-3xl flex-col px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6">
+      <div className="relative mx-auto flex min-h-[100svh] max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6">
         {/* Oben: Ort · Uhrzeit · Tag. Antippen zum Ändern. */}
         <button
           onClick={() => setEditOpen((v) => !v)}
           aria-expanded={editOpen}
           aria-label="Ort, Uhrzeit und Tag ändern"
-          className="glass-soft relative z-30 flex w-full items-center gap-2.5 rounded-2xl px-4 py-3.5 text-left transition hover:border-cyan-300/40"
+          className="glass-soft relative z-30 mx-auto flex w-[calc(100%-2rem)] max-w-sm items-center justify-center gap-2.5 rounded-2xl px-4 py-3 text-center transition hover:border-cyan-300/40"
         >
           <MapPin className="h-4 w-4 shrink-0 text-cyan-300" />
-          <span className="min-w-0 flex-1 truncate text-base font-bold text-white">
+          <span className="min-w-0 truncate text-base font-bold text-white">
             {place.name}
             <span className="font-semibold text-slate-300"> · {fmtClock(depart)} Uhr · {day.tab}</span>
           </span>
@@ -586,7 +592,7 @@ export default function App() {
                     if (e.key === "Escape") setSearchOpen(false);
                   }}
                   placeholder={`Ort ändern · aktuell ${place.name}`}
-                  className="w-full bg-transparent text-sm font-medium text-white placeholder:text-slate-500 focus:outline-none"
+                  className="w-full bg-transparent text-base font-medium text-white placeholder:text-slate-500 focus:outline-none"
                   aria-label="Stadt suchen"
                 />
                 {query ? (
@@ -654,7 +660,7 @@ export default function App() {
                     setSelectedTime(null);
                   }}
                   aria-label="Abfahrtszeit"
-                  className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
+                  className="cursor-pointer bg-transparent text-base font-bold text-white tabular-nums focus:outline-none"
                 >
                   {DEPART_OPTIONS.map((m) => (
                     <option key={m} value={m} className="bg-[#0a1428] text-white">
@@ -695,7 +701,7 @@ export default function App() {
         {/* Mitte: der Risiko-Kreis, fast bildschirmbreit */}
         <div className="flex flex-1 flex-col items-center justify-center py-6">
           {loading && !analysis ? (
-            <div className="aspect-square w-full max-w-[440px] animate-pulse rounded-full border-[10px] border-white/10" />
+            <div className="aspect-square w-full max-w-[min(440px,50dvh)] animate-pulse rounded-full border-[10px] border-white/10" />
           ) : analysis ? (
             <div className="animate-rise flex w-full flex-col items-center" key={`${place.id}-${offset}`}>
               <RiskGauge score={analysis.score} level={level} />
@@ -743,7 +749,7 @@ export default function App() {
             </p>
           </div>
         )}
-        <div className="flex items-stretch gap-2">
+        <div className="flex items-stretch gap-2 px-1">
           <button
             onClick={() => setShowDetails((v) => !v)}
             aria-expanded={showDetails}

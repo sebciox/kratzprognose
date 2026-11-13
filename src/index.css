@@ -16,6 +16,9 @@ body {
   background: #050b19;
   color: #eaf3ff;
   -webkit-font-smoothing: antialiased;
+  /* Kein Doppeltipp-Zoom und kein seitliches Verschieben auf dem Handy. */
+  touch-action: manipulation;
+  overflow-x: hidden;
 }
 
 .glass {

@@ -9,6 +9,9 @@ createRoot(document.getElementById("root")!).render(
   </StrictMode>
 );
 
+// iOS: Zwei-Finger-Zoom abschalten, damit die Ansicht nicht versehentlich vergrößert und angeschnitten wird.
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+
 // Service Worker nur im Produktions-Build: macht die App installierbar und startet sie schnell.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
