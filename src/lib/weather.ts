@@ -83,6 +83,11 @@ export type Analysis = {
   dailyMax: number;
   thawHour: string | null;
   factors: Factor[];
+  /** Abfahrtszeit in Minuten seit Mitternacht, für die bewertet wurde. */
+  departMin: number;
+  departLabel: string;
+  /** Wetterwerte zur Abfahrtszeit (zwischen den beiden Nachbarstunden interpoliert). */
+  departure: HourData;
 };
 
 const clamp = (n: number, min = 0, max = 1) => Math.min(max, Math.max(min, n));
@@ -151,7 +156,7 @@ function localParts(timeZone: string, date = new Date()) {
     hourCycle: "h23",
   }).formatToParts(date);
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour") };
+  return { year: get("year"), month: get("month"), day: get("day"), hour: get("hour"), minute: get("minute") };
 }
 
 function safeTimeZone(timeZone: string): string {
@@ -163,13 +168,26 @@ function safeTimeZone(timeZone: string): string {
   }
 }
 
-/** Ab dieser Uhrzeit zeigt die App standardmäßig „Morgen“ statt „Heute“. */
-export const TODAY_UNTIL_HOUR = 9;
+/** Abfahrtszeit in Minuten seit Mitternacht: Standard 6:00, wählbar 4:00–10:00 in 15-Minuten-Schritten. */
+export const DEFAULT_DEPART = 6 * 60;
+export const DEPART_MIN = 4 * 60;
+export const DEPART_MAX = 10 * 60;
+export const DEPART_STEP = 15;
 
-/** 0 = Heute (früh am Tag), 1 = Morgen (ab TODAY_UNTIL_HOUR). */
-export function defaultOffset(timeZone: string, now = new Date()): DayOffset {
-  const { hour } = localParts(safeTimeZone(timeZone), now);
-  return hour < TODAY_UNTIL_HOUR ? 0 : 1;
+export const fmtClock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+/** Macht aus einem gespeicherten/unbekannten Wert eine gültige Abfahrtszeit. */
+export function normalizeDepart(value: unknown): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : DEFAULT_DEPART;
+  const stepped = Math.round(n / DEPART_STEP) * DEPART_STEP;
+  return Math.min(DEPART_MAX, Math.max(DEPART_MIN, stepped));
+}
+
+/** Bis eine Stunde nach der Abfahrt zeigt die App standardmäßig „Heute“, danach „Morgen“. */
+export function defaultOffset(timeZone: string, departMin: number, now = new Date()): DayOffset {
+  const { hour, minute } = localParts(safeTimeZone(timeZone), now);
+  return hour * 60 + minute < departMin + 60 ? 0 : 1;
 }
 
 export function localDateKey(timeZone: string, offset: number, now = new Date()): string {
@@ -235,18 +253,52 @@ function levelFromScore(score: number): RiskLevel {
   return "none";
 }
 
-export function analyze(fc: Forecast, offset: DayOffset): Analysis {
+/** Stunden vor der Abfahrt, deren Frost noch auf der Scheibe liegen kann. */
+const FROST_MEMORY_MIN = 180;
+
+/** Wetterwerte zur genauen Abfahrtszeit: lineare Interpolation zwischen voller und nächster Stunde. */
+function interpolateDeparture(
+  scored: HourData[],
+  dayKey: string,
+  departMin: number,
+  wetBonus: number,
+  fallback: HourData
+): HourData {
+  const hour = Math.floor(departMin / 60);
+  const frac = (departMin % 60) / 60;
+  const idx = scored.findIndex((h) => h.time === `${dayKey}T${String(hour).padStart(2, "0")}:00`);
+  const a = idx >= 0 ? scored[idx] : undefined;
+  if (!a) return { ...fallback, time: `${dayKey}T${fmtClock(departMin)}`, hour };
+  const b = scored[idx + 1] ?? a;
+  const mix = (x: number, y: number) => x + (y - x) * frac;
+  const raw = {
+    time: `${dayKey}T${fmtClock(departMin)}`,
+    hour,
+    temp: round1(mix(a.temp, b.temp)),
+    dew: round1(mix(a.dew, b.dew)),
+    humidity: Math.round(mix(a.humidity, b.humidity)),
+    precip: round1(mix(a.precip, b.precip)),
+    code: frac < 0.5 ? a.code : b.code,
+    cloud: Math.round(mix(a.cloud, b.cloud)),
+    wind: Math.round(mix(a.wind, b.wind)),
+  };
+  return { ...raw, risk: hourRisk(raw, wetBonus) };
+}
+
+export function analyze(fc: Forecast, offset: DayOffset, departInput: number = DEFAULT_DEPART): Analysis {
+  const departMin = normalizeDepart(departInput);
   const dayKey = localDateKey(fc.timezone, offset);
   const prevKey = localDateKey(fc.timezone, offset - 1);
   const all = rawHours(fc);
 
   const dayHours = all.filter((h) => h.time.startsWith(dayKey));
   const prevEvening = all.filter((h) => h.time.startsWith(prevKey) && h.hour >= 19);
-  const targetNight = dayHours.filter((h) => h.hour <= 9);
+  // Nacht bis zur Abfahrt: ab 22 Uhr am Vorabend bis zur Abfahrtsstunde.
+  const targetNight = dayHours.filter((h) => h.hour * 60 <= departMin);
   const night = [...prevEvening.filter((h) => h.hour >= 22), ...targetNight];
 
   const nightPrecip = round1(
-    [...prevEvening, ...dayHours.filter((h) => h.hour <= 7)].reduce((sum, h) => sum + h.precip, 0)
+    [...prevEvening, ...dayHours.filter((h) => h.hour * 60 <= departMin)].reduce((sum, h) => sum + h.precip, 0)
   );
   const wetBonus = clamp(nightPrecip / 1.5) * 9;
 
@@ -263,28 +315,43 @@ export function analyze(fc: Forecast, offset: DayOffset): Analysis {
     wind: 0,
     risk: 0,
   };
-  const scoredNight = scored.filter((h) => h.time.startsWith(dayKey) && h.hour <= 9);
-  const relevant = scored.filter((h) => h.time.startsWith(dayKey) && h.hour <= 10);
+  const departure = interpolateDeparture(scored, dayKey, departMin, wetBonus, fallback);
+
+  // Kältester Moment der Nacht bis zur Abfahrt (inklusive Abfahrtszeitpunkt).
+  const scoredNight = [...scored.filter((h) => h.time.startsWith(dayKey) && h.hour * 60 <= departMin), departure];
   const coldest = [...scoredNight].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
-  const worst = [...relevant].sort((a, b) => b.risk - a.risk)[0] ?? fallback;
+
+  // Für die Bewertung zählt, was in den Stunden vor der Abfahrt auf der Scheibe liegen kann.
+  const windowHours = [
+    ...scored.filter(
+      (h) =>
+        h.time.startsWith(dayKey) && h.hour * 60 >= departMin - FROST_MEMORY_MIN && h.hour * 60 <= departMin
+    ),
+    departure,
+  ];
+  const worst = [...windowHours].sort((a, b) => b.risk - a.risk)[0] ?? fallback;
+  const windowColdest = [...windowHours].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
 
   let score = worst.risk;
-  if (coldest.temp <= 0 && coldest.humidity >= 70) score = Math.max(score, 45);
-  if (coldest.temp >= 5) score = Math.min(score, 12);
-  if (coldest.temp <= -1 && nightPrecip > 0.1) score = Math.max(score, 70);
+  if (windowColdest.temp <= 0 && windowColdest.humidity >= 70) score = Math.max(score, 45);
+  if (windowColdest.temp >= 5) score = Math.min(score, 12);
+  if (windowColdest.temp <= -1 && nightPrecip > 0.1) score = Math.max(score, 70);
 
   const avgHumidity = Math.round(night.reduce((s, h) => s + h.humidity, 0) / Math.max(1, night.length));
   const avgCloud = Math.round(night.reduce((s, h) => s + h.cloud, 0) / Math.max(1, night.length));
   const avgWind = Math.round(night.reduce((s, h) => s + h.wind, 0) / Math.max(1, night.length));
-  const morningHours = scored.filter((h) => h.time.startsWith(dayKey) && h.hour >= 5 && h.hour <= 10);
+  // Diagramm: 4 bis 10 Uhr deckt jede wählbare Abfahrtszeit ab.
+  const morningHours = scored.filter((h) => h.time.startsWith(dayKey) && h.hour >= 4 && h.hour <= 10);
 
   const dailyIndex = fc.daily?.time?.indexOf(dayKey) ?? -1;
   const sunriseRaw = dailyIndex >= 0 ? fc.daily.sunrise[dailyIndex] : "";
   const sunrise = sunriseRaw ? sunriseRaw.slice(11, 16) : "–";
   const dailyMax = dailyIndex >= 0 ? fc.daily.temperature_2m_max[dailyIndex] : 8;
-  const thaw = scored.find(
-    (h) => h.time.startsWith(dayKey) && h.hour >= 7 && h.hour <= 12 && h.temp > 1.5
-  );
+  // „Taut ab“ nur, wenn es zur Abfahrt noch nicht mild genug ist.
+  const thaw =
+    departure.temp > 1.5
+      ? undefined
+      : scored.find((h) => h.time.startsWith(dayKey) && h.hour * 60 > departMin && h.hour <= 12 && h.temp > 1.5);
   const thawHour = thaw ? `${String(thaw.hour).padStart(2, "0")}:00` : null;
 
   const factors: Factor[] = [
@@ -356,6 +423,9 @@ export function analyze(fc: Forecast, offset: DayOffset): Analysis {
     dailyMax,
     thawHour,
     factors,
+    departMin,
+    departLabel: fmtClock(departMin),
+    departure,
   };
 }
 

@@ -35,9 +35,15 @@ import {
   analyze,
   createDemoForecast,
   DAY_WORDS,
+  DEFAULT_DEPART,
   defaultOffset,
+  DEPART_MAX,
+  DEPART_MIN,
+  DEPART_STEP,
+  fmtClock,
   fmtTemp,
   getForecast,
+  normalizeDepart,
   searchPlaces,
   weatherKind,
   weatherLabel,
@@ -52,6 +58,12 @@ import {
 const STORAGE_HOME = "kratzprognose.home";
 const STORAGE_GPS = "kratzprognose.gps";
 const STORAGE_ACTIVE = "kratzprognose.active";
+const STORAGE_DEPART = "kratzprognose.depart";
+
+const DEPART_OPTIONS = Array.from(
+  { length: (DEPART_MAX - DEPART_MIN) / DEPART_STEP + 1 },
+  (_, i) => DEPART_MIN + i * DEPART_STEP
+);
 
 /** Startort beim allerersten Aufruf; wird durch die Ortssuche ersetzt und dann gemerkt. */
 const DEFAULT_HOME: Place = {
@@ -279,7 +291,17 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   );
 }
 
-function TempChart({ hours, selectedTime, onSelect }: { hours: HourData[]; selectedTime: string; onSelect: (t: string) => void }) {
+function TempChart({
+  hours,
+  selectedTime,
+  onSelect,
+  departMin,
+}: {
+  hours: HourData[];
+  selectedTime: string;
+  onSelect: (t: string) => void;
+  departMin: number;
+}) {
   const width = 700;
   const height = 215;
   const left = 38;
@@ -300,6 +322,10 @@ function TempChart({ hours, selectedTime, onSelect }: { hours: HourData[]; selec
   const dewPath = hours.map((h, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(h.dew)}`).join(" ");
   const area = `${tempPath} L ${x(hours.length - 1)} ${top + plotH} L ${x(0)} ${top + plotH} Z`;
   const ticks = [hi - 1.4, (hi + lo) / 2, lo + 1.4];
+  // Position der Abfahrtszeit im Diagramm (Bruchteil zwischen zwei Stunden möglich).
+  const departIndex = departMin / 60 - hours[0].hour;
+  const showDepart = departIndex >= 0 && departIndex <= hours.length - 1;
+  const departX = left + (departIndex * plotW) / Math.max(1, hours.length - 1);
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label="Temperaturverlauf am Morgen">
@@ -322,6 +348,14 @@ function TempChart({ hours, selectedTime, onSelect }: { hours: HourData[]; selec
         </g>
       )}
       <path d={area} fill="url(#areaGradient)" />
+      {showDepart && (
+        <g>
+          <line x1={departX} x2={departX} y1={top - 4} y2={top + plotH} stroke="#fbbf24" strokeOpacity="0.7" strokeWidth="1.5" strokeDasharray="3 4" />
+          <text x={departX} y={top - 9} textAnchor="middle" fill="#fbbf24" fontSize="10" fontWeight="700">
+            Abfahrt {fmtClock(departMin)}
+          </text>
+        </g>
+      )}
       <path d={dewPath} fill="none" stroke="#a78bfa" strokeWidth="2" strokeDasharray="5 5" strokeLinecap="round" opacity="0.8" />
       <path d={tempPath} fill="none" stroke="#67e8f9" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       {hours.map((h, i) => {
@@ -379,7 +413,8 @@ export default function App() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [demo, setDemo] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
-  const [offset, setOffset] = useState<DayOffset>(() => defaultOffset(deviceTimeZone()));
+  const [depart, setDepart] = useState<number>(() => normalizeDepart(readStored(STORAGE_DEPART, DEFAULT_DEPART)));
+  const [offset, setOffset] = useState<DayOffset>(() => defaultOffset(deviceTimeZone(), depart));
   const lastLoadedAt = useRef(0);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
@@ -393,6 +428,7 @@ export default function App() {
   useEffect(() => writeStored(STORAGE_HOME, home), [home]);
   useEffect(() => writeStored(STORAGE_GPS, gps), [gps]);
   useEffect(() => writeStored(STORAGE_ACTIVE, active), [active]);
+  useEffect(() => writeStored(STORAGE_DEPART, depart), [depart]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -425,13 +461,13 @@ export default function App() {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       if (Date.now() - lastLoadedAt.current < STALE_AFTER_MS) return;
-      setOffset(defaultOffset(deviceTimeZone()));
+      setOffset(defaultOffset(deviceTimeZone(), depart));
       setSelectedTime(null);
       setReloadToken((n) => n + 1);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, []);
+  }, [depart]);
 
   useEffect(() => {
     const q = query.trim();
@@ -469,11 +505,11 @@ export default function App() {
   const analysis: Analysis | null = useMemo(() => {
     if (!forecast) return null;
     try {
-      return analyze(forecast, offset);
+      return analyze(forecast, offset, depart);
     } catch {
       return null;
     }
-  }, [forecast, offset]);
+  }, [forecast, offset, depart]);
 
   const resetView = () => {
     setQuery("");
@@ -539,10 +575,8 @@ export default function App() {
   const level: RiskLevel = analysis?.level ?? "none";
   const day = DAY_WORDS[offset];
   const prepItems = (offset === 0 ? PREP_ITEMS_TODAY : PREP_ITEMS_AHEAD)[level];
-  const selectedHour =
-    analysis?.morningHours.find((h) => h.time === selectedTime) ??
-    analysis?.morningHours[Math.min(2, Math.max(0, (analysis?.morningHours.length ?? 1) - 1))] ??
-    null;
+  // Ohne Auswahl zeigt die Detailzeile die Werte zur Abfahrtszeit.
+  const selectedHour = analysis?.morningHours.find((h) => h.time === selectedTime) ?? analysis?.departure ?? null;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#050b19] text-slate-100">
@@ -645,7 +679,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={useGeolocation}
               disabled={geoLoading}
@@ -656,6 +690,28 @@ export default function App() {
               {geoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
               <span className="hidden sm:inline">Standort neu</span>
             </button>
+            <label
+              className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition focus-within:border-cyan-300/40 hover:border-cyan-300/40"
+              title="Abfahrtszeit"
+            >
+              <Clock className="h-4 w-4 shrink-0 text-amber-300" />
+              <span className="hidden sm:inline">Abfahrt</span>
+              <select
+                value={depart}
+                onChange={(e) => {
+                  setDepart(normalizeDepart(Number(e.target.value)));
+                  setSelectedTime(null);
+                }}
+                aria-label="Abfahrtszeit"
+                className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
+              >
+                {DEPART_OPTIONS.map((m) => (
+                  <option key={m} value={m} className="bg-[#0a1428] text-white">
+                    {fmtClock(m)} Uhr
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="glass-soft flex rounded-xl p-1">
               {([0, 1, 2] as const).map((o) => (
                 <button
@@ -757,7 +813,7 @@ export default function App() {
                 </div>
                 <div className="flex flex-col items-center">
                   <RiskGauge score={analysis.score} level={level} />
-                  <p className="mt-1 text-center text-xs text-slate-400">Einschätzung für Nacht &amp; früher Morgen</p>
+                  <p className="mt-1 text-center text-xs text-slate-400">Einschätzung für die Nacht bis zur Abfahrt um {analysis.departLabel} Uhr</p>
                 </div>
               </div>
 
@@ -793,7 +849,7 @@ export default function App() {
                   <div>
                     <h3 className="text-lg font-bold tracking-tight">{cap(day.early)} im Verlauf</h3>
                     <p className="mt-1 text-xs text-slate-400">
-                      5 bis 10 Uhr · tippe auf eine Uhrzeit für Details
+                      4 bis 10 Uhr · Abfahrt {analysis.departLabel} Uhr · tippe auf eine Uhrzeit für Details
                       {offset === 0 ? " · bereits vergangene Stunden sind Modellwerte, keine Messung" : ""}
                     </p>
                   </div>
@@ -807,6 +863,7 @@ export default function App() {
                     hours={analysis.morningHours}
                     selectedTime={selectedHour?.time ?? ""}
                     onSelect={setSelectedTime}
+                    departMin={analysis.departMin}
                   />
                 </div>
                 {selectedHour && (
@@ -833,6 +890,7 @@ export default function App() {
                 <p className="mt-1 text-xs text-slate-400">Alle Werte für {analysis.shortDateLabel}</p>
                 <div className="mt-5 space-y-2.5">
                   {[
+                    { icon: Clock, label: `Bei Abfahrt (${analysis.departLabel} Uhr)`, value: `${fmtTemp(analysis.departure.temp)} · ${weatherLabel(analysis.departure.code)}`, tint: "text-amber-300" },
                     { icon: ThermometerSnowflake, label: "Tiefsttemperatur", value: `${fmtTemp(analysis.minTemp)} um ${analysis.coldest.time.slice(11, 16)} Uhr`, tint: "text-cyan-300" },
                     { icon: Droplets, label: "Taupunkt (kältester Moment)", value: fmtTemp(analysis.dewAtColdest), tint: "text-violet-300" },
                     { icon: CloudRain, label: "Niederschlag in der Nacht", value: analysis.nightPrecip > 0 ? `${analysis.nightPrecip.toFixed(1).replace(".", ",")} mm` : "0,0 mm", tint: "text-blue-300" },
