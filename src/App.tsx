@@ -22,7 +22,6 @@ import {
   MapPin,
   RefreshCw,
   Search,
-  Settings,
   ShieldCheck,
   Sun,
   Sunrise,
@@ -31,10 +30,11 @@ import {
   Wind,
   X,
 } from "lucide-react";
+import { PULL_READY, usePullToRefresh } from "./lib/usePullToRefresh";
 import {
-  analyze,
+  analyzeDays,
   createDemoForecast,
-  DAY_WORDS,
+  dayWords,
   DEFAULT_DEPART,
   defaultOffset,
   DEPART_MAX,
@@ -46,6 +46,7 @@ import {
   normalizeDepart,
   searchPlaces,
   weatherKind,
+  weekdayShort,
   weatherLabel,
   type Analysis,
   type DayOffset,
@@ -92,7 +93,7 @@ const VERDICT: Record<
   RiskLevel,
   {
     badge: string;
-    description: (day: DayOffset) => string;
+    description: (early: string) => string;
     color: string;
     glow: string;
     text: string;
@@ -132,8 +133,8 @@ const VERDICT: Record<
   },
   none: {
     badge: "Kein Frost in Sicht",
-    description: (d) =>
-      `Die Nacht bleibt zu warm für Raureif oder Eis auf der Windschutzscheibe. Du kannst ${DAY_WORDS[d].early} voraussichtlich direkt losfahren.`,
+    description: (early) =>
+      `Die Nacht bleibt zu warm für Raureif oder Eis auf der Windschutzscheibe. Du kannst ${early} voraussichtlich direkt losfahren.`,
     color: "#6ee7b7",
     glow: "rgba(110,231,183,0.22)",
     text: "text-emerald-200",
@@ -213,7 +214,7 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   const radius = 84;
   const circumference = 2 * Math.PI * radius;
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[min(440px,50dvh)]">
+    <div className="relative mx-auto aspect-square w-full max-w-[min(440px,42dvh)]">
       <div
         className="absolute inset-6 rounded-full blur-3xl transition-colors duration-700"
         style={{ background: VERDICT[level].glow, opacity: 0.55 }}
@@ -243,6 +244,52 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
         <span className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Risiko</span>
         <span className="mt-1 text-[5.5rem] font-extrabold leading-none tracking-tight text-white tabular-nums sm:text-[7rem]">{score}</span>
       </div>
+    </div>
+  );
+}
+
+/** Kleiner Risiko-Kreis für einen Tag in der Mehrtages-Leiste. */
+function MiniGauge({ score, level }: { score: number; level: RiskLevel }) {
+  const c = VERDICT[level].color;
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <div className="relative h-12 w-12">
+      <svg viewBox="0 0 44 44" className="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="22" cy="22" r={radius} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+        <circle
+          cx="22"
+          cy="22"
+          r={radius}
+          fill="none"
+          stroke={c}
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - score / 100)}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-sm font-extrabold tabular-nums text-white">{score}</span>
+    </div>
+  );
+}
+
+/** Heute und die nächsten Tage als Reihe kleiner Kreise. Antippen wählt den Tag für den großen Kreis. */
+function DayStrip({ days, selected, onSelect }: { days: Analysis[]; selected: number; onSelect: (offset: DayOffset) => void }) {
+  return (
+    <div className="mt-6 grid w-full grid-cols-5 gap-1.5" role="tablist" aria-label="Prognose für die nächsten Tage">
+      {days.map((d, i) => (
+        <button
+          key={d.dateKey}
+          role="tab"
+          aria-selected={selected === i}
+          onClick={() => onSelect(i as DayOffset)}
+          className={`flex flex-col items-center gap-1.5 rounded-2xl border px-1 py-2.5 transition ${selected === i ? "border-cyan-300/40 bg-cyan-300/10" : "border-transparent hover:border-white/20"}`}
+        >
+          <MiniGauge score={d.score} level={d.level} />
+          <span className={`text-[11px] font-semibold ${selected === i ? "text-cyan-100" : "text-slate-400"}`}>{weekdayShort(i, d.dateKey)}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -378,7 +425,6 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [showDetails, setShowDetails] = useState<boolean>(() => readStored<boolean>(STORAGE_DETAILS, false) === true);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -462,20 +508,21 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
 
-  const analysis: Analysis | null = useMemo(() => {
-    if (!forecast) return null;
+  // Einschätzung für heute und die nächsten Tage zur gewählten Abfahrtszeit.
+  const days: Analysis[] = useMemo(() => {
+    if (!forecast) return [];
     try {
-      return analyze(forecast, offset, depart);
+      return analyzeDays(forecast, depart);
     } catch {
-      return null;
+      return [];
     }
-  }, [forecast, offset, depart]);
+  }, [forecast, depart]);
+  const analysis: Analysis | null = days[offset] ?? null;
 
   const resetView = () => {
     setQuery("");
     setResults([]);
     setSearchOpen(false);
-    setSettingsOpen(false);
     setEditOpen(false);
     setSelectedTime(null);
     setChecked({});
@@ -541,7 +588,8 @@ export default function App() {
 
   const verdict = analysis ? VERDICT[analysis.level] : VERDICT.none;
   const level: RiskLevel = analysis?.level ?? "none";
-  const day = DAY_WORDS[offset];
+  const day = dayWords(offset, analysis?.dateKey);
+  const pull = usePullToRefresh(() => setReloadToken((n) => n + 1));
   // Zeigt, für welche Region die Aussage gilt (bei GPS statt der Koordinaten nur „GPS-Standort“).
   const placeSub = place.region === "GPS-Standort" ? "GPS-Standort" : [place.region, place.country].filter(Boolean).join(", ");
   const prepItems = (offset === 0 ? PREP_ITEMS_TODAY : PREP_ITEMS_AHEAD)[level];
@@ -558,7 +606,20 @@ export default function App() {
       </div>
       <SnowBackground />
 
-      <div className="relative mx-auto flex min-h-[100svh] max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6">
+      {pull > 0 && (
+        <div
+          className="pointer-events-none fixed left-1/2 z-50 flex h-10 w-10 -translate-x-1/2 items-center justify-center rounded-full border border-cyan-300/30 bg-[#0a1a30]/80 text-cyan-200"
+          style={{ top: "calc(env(safe-area-inset-top) + 1rem)", opacity: Math.min(1, pull / PULL_READY) }}
+          aria-hidden="true"
+        >
+          <RefreshCw className="h-4 w-4" style={{ transform: `rotate(${pull * 8}deg)` }} />
+        </div>
+      )}
+
+      <div
+        className="relative mx-auto flex min-h-[100svh] max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6"
+        style={{ transform: pull > 0 ? `translateY(${pull}px)` : undefined, transition: pull > 0 ? "none" : "transform 0.25s ease" }}
+      >
         {/* Oben: Ort · Uhrzeit · Tag. Antippen zum Ändern. */}
         <button
           onClick={() => setEditOpen((v) => !v)}
@@ -566,7 +627,7 @@ export default function App() {
           aria-label="Ort, Uhrzeit und Tag ändern"
           className="glass-soft relative z-30 mx-auto flex w-[calc(100%-2rem)] max-w-sm items-center justify-center gap-2.5 rounded-2xl px-4 py-3 text-center transition hover:border-cyan-300/40"
         >
-          <MapPin className="h-4 w-4 shrink-0 text-cyan-300" />
+          {loading ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-300" /> : <MapPin className="h-4 w-4 shrink-0 text-cyan-300" />}
           <span className="min-w-0 truncate text-base font-bold text-white">
             {place.name}
             <span className="font-semibold text-slate-300"> · {fmtClock(depart)} Uhr · {day.tab}</span>
@@ -641,7 +702,7 @@ export default function App() {
                   onClick={c.onClick}
                   className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${place === (c.key === "gps" ? gps : home) ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25 hover:text-white"}`}
                 >
-                  <c.icon className="h-3.5 w-3.5" />
+                  {c.key === "gps" && geoLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <c.icon className="h-3.5 w-3.5" />}
                   {c.label}
                 </button>
               ))}
@@ -669,17 +730,6 @@ export default function App() {
                   ))}
                 </select>
               </label>
-              <div className="glass-soft flex rounded-xl p-1">
-                {([0, 1, 2] as const).map((o) => (
-                  <button
-                    key={o}
-                    onClick={() => { setOffset(o); setSelectedTime(null); }}
-                    className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:px-3.5 ${offset === o ? "bg-cyan-300/15 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.25)]" : "text-slate-400 hover:text-white"}`}
-                  >
-                    {DAY_WORDS[o].tab}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         )}
@@ -701,14 +751,17 @@ export default function App() {
         {/* Mitte: der Risiko-Kreis, fast bildschirmbreit */}
         <div className="flex flex-1 flex-col items-center justify-center py-6">
           {loading && !analysis ? (
-            <div className="aspect-square w-full max-w-[min(440px,50dvh)] animate-pulse rounded-full border-[10px] border-white/10" />
+            <div className="aspect-square w-full max-w-[min(440px,42dvh)] animate-pulse rounded-full border-[10px] border-white/10" />
           ) : analysis ? (
-            <div className="animate-rise flex w-full flex-col items-center" key={`${place.id}-${offset}`}>
-              <RiskGauge score={analysis.score} level={level} />
-              <p className="mt-5 text-center text-2xl font-extrabold tracking-tight" style={{ color: verdict.color }}>
-                {verdict.badge}
-              </p>
-            </div>
+            <>
+              <div className="animate-rise flex w-full flex-col items-center" key={`${place.id}-${offset}`}>
+                <RiskGauge score={analysis.score} level={level} />
+                <p className="mt-5 text-center text-2xl font-extrabold tracking-tight" style={{ color: verdict.color }}>
+                  {verdict.badge}
+                </p>
+              </div>
+              <DayStrip days={days} selected={offset} onSelect={(o) => { setOffset(o); setSelectedTime(null); }} />
+            </>
           ) : (
             !error && (
               <div className="text-center">
@@ -723,32 +776,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Unten: Einstellungen, Details und Zahnrad */}
-        {settingsOpen && (
-          <div className="glass mb-3 flex flex-col gap-2 rounded-2xl p-3">
-            <button
-              onClick={() => setReloadToken((n) => n + 1)}
-              className="glass-soft flex items-center gap-2.5 rounded-xl px-3.5 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-cyan-300/40"
-            >
-              <RefreshCw className={`h-4 w-4 text-cyan-300 ${loading ? "animate-spin" : ""}`} />
-              Prognose aktualisieren
-            </button>
-            <button
-              onClick={useGeolocation}
-              disabled={geoLoading}
-              className="glass-soft flex items-center gap-2.5 rounded-xl px-3.5 py-3 text-left text-sm font-semibold text-slate-200 transition hover:border-cyan-300/40 disabled:opacity-60"
-            >
-              {geoLoading ? <Loader2 className="h-4 w-4 animate-spin text-cyan-300" /> : <LocateFixed className="h-4 w-4 text-cyan-300" />}
-              Standort neu bestimmen
-            </button>
-            <p className="flex items-center gap-2 px-1 pt-1 text-[11px] text-slate-500">
-              <Info className="h-3.5 w-3.5 shrink-0" />
-              {demo
-                ? "Beispielwerte – keine Live-Prognose"
-                : `Stand: ${updatedAt ? updatedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–"} Uhr`}
-            </p>
-          </div>
-        )}
+        {/* Unten: Details */}
         <div className="flex items-stretch gap-2 px-1">
           <button
             onClick={() => setShowDetails((v) => !v)}
@@ -757,15 +785,6 @@ export default function App() {
           >
             {showDetails ? "Details ausblenden" : "Details anzeigen"}
             <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? "rotate-180" : ""}`} />
-          </button>
-          <button
-            onClick={() => setSettingsOpen((v) => !v)}
-            title="Einstellungen"
-            aria-label="Einstellungen"
-            aria-expanded={settingsOpen}
-            className={`glass-soft flex w-14 shrink-0 items-center justify-center rounded-2xl transition hover:border-cyan-300/40 hover:text-cyan-200 ${settingsOpen ? "border-cyan-300/40 text-cyan-200" : "text-slate-300"}`}
-          >
-            <Settings className="h-5 w-5" />
           </button>
         </div>
 
@@ -783,7 +802,7 @@ export default function App() {
                 </span>
               </div>
               <p className="px-6 pt-2 text-xs text-slate-500 sm:px-8">{[place.name, placeSub].filter(Boolean).join(", ")}</p>
-              <p className="px-6 pt-4 text-sm leading-relaxed text-slate-300 sm:px-8">{verdict.description(offset)}</p>
+              <p className="px-6 pt-4 text-sm leading-relaxed text-slate-300 sm:px-8">{verdict.description(day.early)}</p>
               <div className="flex flex-wrap gap-2 px-6 pb-6 pt-4 sm:px-8">
                 <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.chip}`}>
                   <ThermometerSnowflake className="mr-1.5 inline h-3.5 w-3.5" />

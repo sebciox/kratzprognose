@@ -43,14 +43,34 @@ export type Forecast = {
   };
 };
 
-/** 0 = Heute, 1 = Morgen, 2 = Übermorgen */
-export type DayOffset = 0 | 1 | 2;
+/** 0 = Heute, 1 = Morgen, 2 = Übermorgen, 3–4 = die Tage danach */
+export type DayOffset = 0 | 1 | 2 | 3 | 4;
 
-export const DAY_WORDS: Record<DayOffset, { tab: string; early: string; title: string }> = {
+/** Anzahl der Tage in der Mehrtages-Prognose (heute + 4). */
+export const FORECAST_DAYS = 5;
+
+const FIXED_DAY_WORDS: Record<0 | 1 | 2, { tab: string; early: string; title: string }> = {
   0: { tab: "Heute", early: "heute früh", title: "heute" },
   1: { tab: "Morgen", early: "morgen früh", title: "morgen" },
   2: { tab: "Übermorgen", early: "übermorgen früh", title: "übermorgen" },
 };
+
+const weekdayOf = (dateKey: string, weekday: "long" | "short") =>
+  new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("de-DE", { weekday, timeZone: "UTC" });
+
+/** Wörter für einen Tag: Heute/Morgen/Übermorgen, danach der Wochentag („Sonntag“, „am Sonntag früh“). */
+export function dayWords(offset: DayOffset, dateKey?: string): { tab: string; early: string; title: string } {
+  if (offset <= 2) return FIXED_DAY_WORDS[offset as 0 | 1 | 2];
+  const name = dateKey ? weekdayOf(dateKey, "long") : `in ${offset} Tagen`;
+  return { tab: name, early: `am ${name} früh`, title: name };
+}
+
+/** Kurzer Name für die Tagesleiste: „Heute“, „Morgen“, dann „Sa“, „So“ … */
+export function weekdayShort(offset: number, dateKey: string): string {
+  if (offset === 0) return "Heute";
+  if (offset === 1) return "Morgen";
+  return weekdayOf(dateKey, "short").replace(".", "");
+}
 
 export type RiskLevel = "high" | "medium" | "low" | "none";
 
@@ -137,7 +157,7 @@ export async function getForecast(place: Place, signal?: AbortSignal): Promise<F
     timezone: "auto",
     // Gestern mitladen: für „Heute“ braucht die Analyse den Vorabend (Nachtniederschlag, Nachtmittel).
     past_days: "1",
-    forecast_days: "4",
+    forecast_days: String(FORECAST_DAYS),
     wind_speed_unit: "kmh",
   });
   const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal });
@@ -445,10 +465,15 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
   };
 }
 
+/** Die Einschätzung für heute und die folgenden Tage zur gewählten Abfahrtszeit. */
+export function analyzeDays(fc: Forecast, departMin: number, count: number = FORECAST_DAYS): Analysis[] {
+  return Array.from({ length: count }, (_, i) => analyze(fc, i as DayOffset, departMin));
+}
+
 /** Klar gekennzeichnete Beispieldaten, falls die Live-API nicht erreichbar ist. */
 export function createDemoForecast(place: Place): Forecast {
   const tz = "Europe/Berlin";
-  // Wie die echte Abfrage (past_days=1): gestern + heute + 3 Folgetage.
+  // Wie die echte Abfrage (past_days=1): gestern + heute + 4 Folgetage.
   const startKey = localDateKey(tz, -1);
   const start = new Date(`${startKey}T00:00:00Z`).getTime();
   const time: string[] = [];
@@ -460,10 +485,10 @@ export function createDemoForecast(place: Place): Forecast {
   const cloud_cover: number[] = [];
   const wind_speed_10m: number[] = [];
   const latShift = (place.lat - 50) * -0.18;
-  const dayMins = [0.4, -1.6, -3.4, 0.3, 2.2];
-  const dayIdx = [0, 1, 2, 3, 4];
+  const dayMins = [0.4, -1.6, -3.4, 0.3, 2.2, 1.0];
+  const dayIdx = [0, 1, 2, 3, 4, 5];
 
-  for (let d = 0; d < 5; d++) {
+  for (let d = 0; d < 6; d++) {
     for (let h = 0; h < 24; h++) {
       const iso = new Date(start + (d * 24 + h) * 3600000).toISOString();
       time.push(`${iso.slice(0, 10)}T${iso.slice(11, 16)}`);
@@ -471,7 +496,7 @@ export function createDemoForecast(place: Place): Forecast {
       const temp = round1(min + 5.2 * (0.5 + 0.5 * Math.cos((2 * Math.PI * (h - 14)) / 24)));
       const dew = round1(temp - 1.6 - 0.4 * Math.sin(h / 3));
       const precip = (d === 0 || d === 1) && h >= 20 && h <= 22 ? 0.3 : 0;
-      const cloud = [50, 62, 24, 48, 70][d] + ((h % 5) - 2) * 3;
+      const cloud = [50, 62, 24, 48, 70, 40][d] + ((h % 5) - 2) * 3;
       temperature_2m.push(temp);
       dew_point_2m.push(dew);
       relative_humidity_2m.push(Math.round(Math.min(97, 94 - (temp - dew) * 4)));
@@ -500,8 +525,8 @@ export function createDemoForecast(place: Place): Forecast {
       temperature_2m_min: dayMins.map((m) => round1(m + latShift)),
       temperature_2m_max: dayMins.map((m) => round1(m + 5.2 + latShift)),
       sunrise: dayIdx.map((d) => `${new Date(start + d * 86400000).toISOString().slice(0, 10)}T07:42`),
-      precipitation_sum: [0.3, 0.9, 0, 0.2, 1.1],
-      weather_code: [3, 3, 1, 3, 61],
+      precipitation_sum: [0.3, 0.9, 0, 0.2, 1.1, 0],
+      weather_code: [3, 3, 1, 3, 61, 3],
     },
   };
 }

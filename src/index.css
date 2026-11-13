@@ -8,6 +8,8 @@
 
 html {
   scroll-behavior: smooth;
+  /* Kein Federn am Seitenanfang: das Herunterziehen zum Aktualisieren macht die App selbst. */
+  overscroll-behavior-y: none;
 }
 
 body {
