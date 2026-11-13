@@ -6,6 +6,7 @@ import {
   CarFront,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Cloud,
   CloudDrizzle,
@@ -21,6 +22,7 @@ import {
   MapPin,
   RefreshCw,
   Search,
+  Settings,
   ShieldCheck,
   Snowflake,
   Sparkles,
@@ -59,6 +61,7 @@ const STORAGE_HOME = "kratzprognose.home";
 const STORAGE_GPS = "kratzprognose.gps";
 const STORAGE_ACTIVE = "kratzprognose.active";
 const STORAGE_DEPART = "kratzprognose.depart";
+const STORAGE_DETAILS = "kratzprognose.details";
 
 const DEPART_OPTIONS = Array.from(
   { length: (DEPART_MAX - DEPART_MIN) / DEPART_STEP + 1 },
@@ -231,12 +234,12 @@ function WeatherIcon({ code, className = "h-5 w-5" }: { code: number; className?
   return <Cloud {...props} />;
 }
 
-function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
+function RiskGauge({ score, level, compact = false }: { score: number; level: RiskLevel; compact?: boolean }) {
   const c = VERDICT[level].color;
   const radius = 78;
   const circumference = 2 * Math.PI * radius;
   return (
-    <div className="relative mx-auto h-[210px] w-[210px]">
+    <div className={`relative mx-auto ${compact ? "h-[116px] w-[116px] sm:h-[150px] sm:w-[150px]" : "h-[210px] w-[210px]"}`}>
       <div
         className="absolute inset-4 rounded-full blur-2xl transition-colors duration-700"
         style={{ background: VERDICT[level].glow, opacity: 0.45 }}
@@ -280,12 +283,14 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
         })}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Risiko</span>
-        <span className="mt-1 text-5xl font-extrabold tracking-tight text-white tabular-nums">{score}</span>
-        <span className="text-xs font-medium text-slate-400">von 100</span>
-        <span className="mt-3 rounded-full border px-3 py-1 text-[11px] font-semibold" style={{ color: c, borderColor: `${c}55`, background: `${c}14` }}>
-          {VERDICT[level].badge}
-        </span>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Risiko</span>
+        <span className={`font-extrabold tracking-tight text-white tabular-nums ${compact ? "mt-0.5 text-3xl sm:text-4xl" : "mt-1 text-5xl"}`}>{score}</span>
+        <span className="text-[11px] font-medium text-slate-400">von 100</span>
+        {!compact && (
+          <span className="mt-3 rounded-full border px-3 py-1 text-[11px] font-semibold" style={{ color: c, borderColor: `${c}55`, background: `${c}14` }}>
+            {VERDICT[level].badge}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -422,6 +427,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showDetails, setShowDetails] = useState<boolean>(() => readStored<boolean>(STORAGE_DETAILS, false) === true);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const searchRef = useRef<HTMLDivElement>(null);
 
@@ -429,6 +436,7 @@ export default function App() {
   useEffect(() => writeStored(STORAGE_GPS, gps), [gps]);
   useEffect(() => writeStored(STORAGE_ACTIVE, active), [active]);
   useEffect(() => writeStored(STORAGE_DEPART, depart), [depart]);
+  useEffect(() => writeStored(STORAGE_DETAILS, showDetails), [showDetails]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -515,6 +523,7 @@ export default function App() {
     setQuery("");
     setResults([]);
     setSearchOpen(false);
+    setSettingsOpen(false);
     setSelectedTime(null);
     setChecked({});
   };
@@ -574,6 +583,8 @@ export default function App() {
   const verdict = analysis ? VERDICT[analysis.level] : VERDICT.none;
   const level: RiskLevel = analysis?.level ?? "none";
   const day = DAY_WORDS[offset];
+  // Zeigt, für welche Region die Aussage gilt (bei GPS statt der Koordinaten nur „GPS-Standort“).
+  const placeSub = place.region === "GPS-Standort" ? "GPS-Standort" : [place.region, place.country].filter(Boolean).join(", ");
   const prepItems = (offset === 0 ? PREP_ITEMS_TODAY : PREP_ITEMS_AHEAD)[level];
   // Ohne Auswahl zeigt die Detailzeile die Werte zur Abfahrtszeit.
   const selectedHour = analysis?.morningHours.find((h) => h.time === selectedTime) ?? analysis?.departure ?? null;
@@ -590,7 +601,7 @@ export default function App() {
 
       <div className="relative mx-auto max-w-6xl px-4 pb-16 sm:px-6 lg:px-8">
         {/* Header */}
-        <header className="flex flex-col gap-5 py-7 sm:flex-row sm:items-center sm:justify-between">
+        <header className="flex items-center justify-between gap-3 py-5 sm:py-7">
           <div className="flex items-center gap-3">
             <div className="animate-drift flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/25 bg-gradient-to-br from-cyan-300/25 to-sky-600/10 shadow-[0_0_35px_-8px_rgba(103,232,249,0.55)]">
               <Snowflake className="h-6 w-6 text-cyan-200" strokeWidth={1.7} />
@@ -600,14 +611,14 @@ export default function App() {
               <h1 className="text-lg font-extrabold tracking-tight sm:text-xl">Muss ich {day.title} kratzen?</h1>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {demo && (
               <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-amber-200">
                 Demo-Daten
               </span>
             )}
             {forecast?.current && (
-              <div className="glass-soft flex items-center gap-2 rounded-full px-3.5 py-2 text-sm">
+              <div className="glass-soft hidden items-center gap-2 rounded-full px-3.5 py-2 text-sm sm:flex">
                 <WeatherIcon code={forecast.current.weather_code} className="h-4 w-4 text-cyan-200" />
                 <span className="text-slate-400">Jetzt in {place.name}</span>
                 <span className="font-bold text-white">{fmtTemp(forecast.current.temperature_2m)}</span>
@@ -620,128 +631,152 @@ export default function App() {
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
+            <button
+              onClick={() => setSettingsOpen((v) => !v)}
+              title="Einstellungen"
+              aria-label="Einstellungen"
+              aria-expanded={settingsOpen}
+              className={`glass-soft flex h-9 w-9 items-center justify-center rounded-full transition hover:border-cyan-300/40 hover:text-cyan-200 ${settingsOpen ? "border-cyan-300/40 text-cyan-200" : "text-slate-300"}`}
+            >
+              <Settings className="h-4 w-4" />
+            </button>
           </div>
         </header>
 
-        {/* Toolbar */}
-        <div className="glass relative z-30 flex flex-col gap-3 rounded-2xl p-2.5 md:flex-row md:items-center">
-          <div ref={searchRef} className="relative flex-1">
-            <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 ring-1 ring-white/5 transition focus-within:ring-cyan-300/35">
-              <MapPin className="h-4 w-4 shrink-0 text-cyan-300/80" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setSearchOpen(true);
-                }}
-                onFocus={() => setSearchOpen(true)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && results[0]) selectPlace(results[0]);
-                  if (e.key === "Escape") setSearchOpen(false);
-                }}
-                placeholder={`Ort ändern · aktuell ${place.name}`}
-                className="w-full bg-transparent text-sm font-medium text-white placeholder:text-slate-500 focus:outline-none"
-                aria-label="Stadt suchen"
-              />
-              {query ? (
-                <button onClick={() => { setQuery(""); setResults([]); }} className="text-slate-500 hover:text-white" aria-label="Suche löschen">
-                  <X className="h-4 w-4" />
-                </button>
-              ) : (
-                <Search className="h-4 w-4 shrink-0 text-slate-500" />
-              )}
-              {searching && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-300" />}
-            </div>
-            {searchOpen && (query.length >= 2 || results.length > 0) && (
-              <div className="glass absolute left-0 right-0 top-[calc(100%+8px)] max-h-72 overflow-y-auto rounded-2xl p-1.5 shadow-2xl">
-                {results.length > 0 ? (
-                  results.map((r) => (
-                    <button
-                      key={`${r.id}-${r.lat}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => selectPlace(r)}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.07]"
-                    >
-                      <MapPin className="h-4 w-4 shrink-0 text-cyan-300/70" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-white">{r.name}</span>
-                        <span className="block truncate text-xs text-slate-400">{[r.region, r.country].filter(Boolean).join(", ")}</span>
-                      </span>
-                      <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
-                    </button>
-                  ))
+        {/* Ort: zeigt, für welche Region die Aussage gilt; Antippen öffnet die Einstellungen */}
+        <button
+          onClick={() => setSettingsOpen((v) => !v)}
+          aria-expanded={settingsOpen}
+          aria-label="Ort und Einstellungen"
+          className="glass-soft flex w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-left transition hover:border-cyan-300/40"
+        >
+          <MapPin className="h-4 w-4 shrink-0 text-cyan-300" />
+          <span className="min-w-0 flex-1 truncate">
+            <span className="text-sm font-bold text-white">{place.name}</span>
+            {placeSub && <span className="text-xs text-slate-400"> · {placeSub}</span>}
+          </span>
+        </button>
+
+        {/* Einstellungen: Ortssuche, GPS und gemerkte Orte */}
+        {settingsOpen && (
+          <div className="glass relative z-30 mt-3 flex flex-col gap-3 rounded-2xl p-2.5">
+            <div ref={searchRef} className="relative">
+              <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3.5 py-2.5 ring-1 ring-white/5 transition focus-within:ring-cyan-300/35">
+                <MapPin className="h-4 w-4 shrink-0 text-cyan-300/80" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setSearchOpen(true);
+                  }}
+                  onFocus={() => setSearchOpen(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && results[0]) selectPlace(results[0]);
+                    if (e.key === "Escape") setSearchOpen(false);
+                  }}
+                  placeholder={`Ort ändern · aktuell ${place.name}`}
+                  className="w-full bg-transparent text-sm font-medium text-white placeholder:text-slate-500 focus:outline-none"
+                  aria-label="Stadt suchen"
+                />
+                {query ? (
+                  <button onClick={() => { setQuery(""); setResults([]); }} className="text-slate-500 hover:text-white" aria-label="Suche löschen">
+                    <X className="h-4 w-4" />
+                  </button>
                 ) : (
-                  <p className="px-3 py-4 text-center text-sm text-slate-400">
-                    {searching ? "Orte werden gesucht …" : "Keine Orte gefunden. Versuch eine andere Schreibweise."}
-                  </p>
+                  <Search className="h-4 w-4 shrink-0 text-slate-500" />
                 )}
+                {searching && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cyan-300" />}
               </div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={useGeolocation}
-              disabled={geoLoading}
-              title="GPS-Standort neu bestimmen"
-              aria-label="GPS-Standort neu bestimmen"
-              className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:opacity-60"
-            >
-              {geoLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
-              <span className="hidden sm:inline">Standort neu</span>
-            </button>
-            <label
-              className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition focus-within:border-cyan-300/40 hover:border-cyan-300/40"
-              title="Abfahrtszeit"
-            >
-              <Clock className="h-4 w-4 shrink-0 text-amber-300" />
-              <span className="hidden sm:inline">Abfahrt</span>
-              <select
-                value={depart}
-                onChange={(e) => {
-                  setDepart(normalizeDepart(Number(e.target.value)));
-                  setSelectedTime(null);
-                }}
-                aria-label="Abfahrtszeit"
-                className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
-              >
-                {DEPART_OPTIONS.map((m) => (
-                  <option key={m} value={m} className="bg-[#0a1428] text-white">
-                    {fmtClock(m)} Uhr
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="glass-soft flex rounded-xl p-1">
-              {([0, 1, 2] as const).map((o) => (
+              {searchOpen && (query.length >= 2 || results.length > 0) && (
+                <div className="glass absolute left-0 right-0 top-[calc(100%+8px)] max-h-72 overflow-y-auto rounded-2xl p-1.5 shadow-2xl">
+                  {results.length > 0 ? (
+                    results.map((r) => (
+                      <button
+                        key={`${r.id}-${r.lat}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => selectPlace(r)}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-white/[0.07]"
+                      >
+                        <MapPin className="h-4 w-4 shrink-0 text-cyan-300/70" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-white">{r.name}</span>
+                          <span className="block truncate text-xs text-slate-400">{[r.region, r.country].filter(Boolean).join(", ")}</span>
+                        </span>
+                        <ArrowRight className="h-3.5 w-3.5 text-slate-500" />
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-3 py-4 text-center text-sm text-slate-400">
+                      {searching ? "Orte werden gesucht …" : "Keine Orte gefunden. Versuch eine andere Schreibweise."}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">Ort</span>
+              {([
+                { key: "home" as const, label: home.name, icon: MapPin, onClick: () => selectPlace(home) },
+                { key: "gps" as const, label: gps ? `GPS · ${gps.name}` : "GPS-Standort", icon: LocateFixed, onClick: selectGps },
+              ]).map((c) => (
                 <button
-                  key={o}
-                  onClick={() => { setOffset(o); setSelectedTime(null); }}
-                  className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:px-3.5 ${offset === o ? "bg-cyan-300/15 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.25)]" : "text-slate-400 hover:text-white"}`}
+                  key={c.key}
+                  onClick={c.onClick}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${place === (c.key === "gps" ? gps : home) ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25 hover:text-white"}`}
                 >
-                  {DAY_WORDS[o].tab}
+                  <c.icon className="h-3.5 w-3.5" />
+                  {c.label}
                 </button>
               ))}
+              <button
+                onClick={useGeolocation}
+                disabled={geoLoading}
+                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-200 disabled:opacity-60"
+              >
+                {geoLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
+                Standort neu bestimmen
+              </button>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Orte: gemerkter Heimatort und GPS-Standort */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">Ort</span>
-          {([
-            { key: "home" as const, label: home.name, icon: MapPin, onClick: () => selectPlace(home) },
-            { key: "gps" as const, label: gps ? `GPS · ${gps.name}` : "GPS-Standort", icon: LocateFixed, onClick: selectGps },
-          ]).map((c) => (
-            <button
-              key={c.key}
-              onClick={c.onClick}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${place === (c.key === "gps" ? gps : home) ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : "border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/25 hover:text-white"}`}
+        {/* Abfahrtszeit und Tag */}
+        <div className="glass relative z-20 mt-3 flex flex-wrap items-center gap-2 rounded-2xl p-2.5">
+          <label
+            className="glass-soft flex h-10 items-center gap-2 rounded-xl px-3 text-xs font-semibold text-slate-300 transition focus-within:border-cyan-300/40 hover:border-cyan-300/40"
+            title="Abfahrtszeit"
+          >
+            <Clock className="h-4 w-4 shrink-0 text-amber-300" />
+            <span className="hidden sm:inline">Abfahrt</span>
+            <select
+              value={depart}
+              onChange={(e) => {
+                setDepart(normalizeDepart(Number(e.target.value)));
+                setSelectedTime(null);
+              }}
+              aria-label="Abfahrtszeit"
+              className="cursor-pointer bg-transparent font-bold text-white tabular-nums focus:outline-none"
             >
-              <c.icon className="h-3.5 w-3.5" />
-              {c.label}
-            </button>
-          ))}
+              {DEPART_OPTIONS.map((m) => (
+                <option key={m} value={m} className="bg-[#0a1428] text-white">
+                  {fmtClock(m)} Uhr
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="glass-soft flex rounded-xl p-1">
+            {([0, 1, 2] as const).map((o) => (
+              <button
+                key={o}
+                onClick={() => { setOffset(o); setSelectedTime(null); }}
+                className={`rounded-lg px-3 py-2 text-xs font-bold transition sm:px-3.5 ${offset === o ? "bg-cyan-300/15 text-cyan-100 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.25)]" : "text-slate-400 hover:text-white"}`}
+              >
+                {DAY_WORDS[o].tab}
+              </button>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -767,57 +802,69 @@ export default function App() {
           </div>
         ) : analysis ? (
           <>
-            <section className="glass hero-photo animate-rise relative mt-6 overflow-hidden rounded-[28px]" key={`${place.id}-${offset}`}>
+            <section className="glass hero-photo animate-rise relative mt-4 overflow-hidden rounded-[28px]" key={`${place.id}-${offset}`}>
               <div
                 className="animate-breathe pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full blur-[90px]"
                 style={{ background: verdict.glow }}
               />
-              <div className="relative grid items-center gap-6 p-6 sm:p-9 lg:grid-cols-[1fr_250px] lg:gap-10">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${verdict.chip}`}>
-                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                      {verdict.badge}
-                    </span>
-                    <span className="text-xs font-medium text-slate-400">
-                      <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />
-                      {analysis.dateLabel} · {place.name}
-                    </span>
-                  </div>
-                  <h2 className="shimmer-text mt-6 text-[2.1rem] font-extrabold leading-[1.12] tracking-tight sm:text-5xl">
+              <div className="relative p-6 sm:p-9">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider ${verdict.chip}`}>
+                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                    {verdict.badge}
+                  </span>
+                  <span className="text-xs font-medium text-slate-400">
+                    <CalendarDays className="mr-1.5 inline h-3.5 w-3.5" />
+                    {analysis.dateLabel} · {analysis.departLabel} Uhr
+                  </span>
+                </div>
+                <div className="mt-5 flex items-center gap-4">
+                  <h2 className="shimmer-text min-w-0 flex-1 text-[2rem] font-extrabold leading-[1.12] tracking-tight sm:text-5xl">
                     {verdict.headline}
                   </h2>
-                  <p className="mt-4 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">{verdict.description(offset)}</p>
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.chip}`}>
-                      <ThermometerSnowflake className="mr-1.5 inline h-3.5 w-3.5" />
-                      Tiefstwert {fmtTemp(analysis.minTemp)}
-                    </span>
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
-                      <Droplets className="mr-1.5 inline h-3.5 w-3.5" />
-                      {analysis.avgHumidity}% Luftfeuchte
-                    </span>
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
-                      <Clock className="mr-1.5 inline h-3.5 w-3.5" />
-                      Kritisch um {analysis.worst.time.startsWith(analysis.dateKey) ? analysis.worst.time.slice(11, 16) : analysis.coldest.time.slice(11, 16)} Uhr
-                    </span>
-                  </div>
-                  <div className="mt-7 flex max-w-2xl items-start gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-gradient-to-br ${verdict.iconBox}`}>
-                      <Sparkles className="h-4.5 w-4.5" />
-                    </div>
-                    <p className="text-sm leading-relaxed text-slate-200">
-                      <span className="mr-1 font-bold" style={{ color: verdict.color }}>Tipp:</span> {verdict.tip(offset)}
-                    </p>
+                  <div className="shrink-0">
+                    <RiskGauge score={analysis.score} level={level} compact />
                   </div>
                 </div>
-                <div className="flex flex-col items-center">
-                  <RiskGauge score={analysis.score} level={level} />
-                  <p className="mt-1 text-center text-xs text-slate-400">Einschätzung für die Nacht bis zur Abfahrt um {analysis.departLabel} Uhr</p>
+                <div className="mt-6 flex max-w-2xl items-start gap-3 rounded-2xl border border-white/10 bg-black/25 p-4">
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border bg-gradient-to-br ${verdict.iconBox}`}>
+                    <Sparkles className="h-4.5 w-4.5" />
+                  </div>
+                  <p className="text-sm leading-relaxed text-slate-200">
+                    <span className="mr-1 font-bold" style={{ color: verdict.color }}>Tipp:</span> {verdict.tip(offset)}
+                  </p>
                 </div>
               </div>
+            </section>
 
-              <div className="relative grid grid-cols-1 divide-y divide-white/10 border-t border-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <button
+              onClick={() => setShowDetails((v) => !v)}
+              aria-expanded={showDetails}
+              className="glass-soft mt-4 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-slate-300 transition hover:border-cyan-300/40 hover:text-cyan-100"
+            >
+              {showDetails ? "Details ausblenden" : "Details anzeigen"}
+              <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? "rotate-180" : ""}`} />
+            </button>
+
+            {showDetails && (
+              <>
+            <section className="glass mt-5 overflow-hidden rounded-[24px]">
+              <p className="px-6 pt-6 text-sm leading-relaxed text-slate-300 sm:px-8">{verdict.description(offset)}</p>
+              <div className="flex flex-wrap gap-2 px-6 pb-6 pt-4 sm:px-8">
+                <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${verdict.chip}`}>
+                  <ThermometerSnowflake className="mr-1.5 inline h-3.5 w-3.5" />
+                  Tiefstwert {fmtTemp(analysis.minTemp)}
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                  <Droplets className="mr-1.5 inline h-3.5 w-3.5" />
+                  {analysis.avgHumidity}% Luftfeuchte
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                  <Clock className="mr-1.5 inline h-3.5 w-3.5" />
+                  Kritisch um {analysis.worst.time.startsWith(analysis.dateKey) ? analysis.worst.time.slice(11, 16) : analysis.coldest.time.slice(11, 16)} Uhr
+                </span>
+              </div>
+              <div className="grid grid-cols-1 divide-y divide-white/10 border-t border-white/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
                 <div className="flex items-center gap-3 px-6 py-5 sm:px-8">
                   <ThermometerSnowflake className="h-5 w-5 shrink-0 text-cyan-300" />
                   <div>
@@ -986,6 +1033,8 @@ export default function App() {
                 </div>
               </section>
             </div>
+              </>
+            )}
           </>
         ) : (
           !error && (
