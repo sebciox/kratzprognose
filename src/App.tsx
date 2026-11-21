@@ -920,7 +920,7 @@ export default function App() {
               <section className="glass rounded-[24px] p-5 sm:p-7">
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold tracking-tight">Wie kommt die Einschätzung zustande?</h3>
-                  <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200">4 Faktoren</span>
+                  <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-2 py-0.5 text-[10px] font-bold text-cyan-200">{analysis.factors.length} Faktoren</span>
                 </div>
                 <p className="mt-1 text-xs text-slate-400">Eine Scheibe vereist, wenn sie unter 0 °C auskühlt und genug Feuchtigkeit vorhanden ist.</p>
                 <div className="mt-5 space-y-3">

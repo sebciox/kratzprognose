@@ -17,6 +17,8 @@ export type HourData = {
   code: number;
   cloud: number;
   wind: number;
+  /** Geschätzter Eisstand auf der Scheibe (0 = frei, 100 = dick vereist), inklusive Frost der Stunden davor. */
+  ice: number;
   risk: number;
 };
 
@@ -160,7 +162,13 @@ export async function getForecast(place: Place, signal?: AbortSignal): Promise<F
     forecast_days: String(FORECAST_DAYS),
     wind_speed_unit: "kmh",
   });
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal });
+  // DWD-ICON (2 km in Mitteleuropa, danach gröbere Modelle) statt Open-Meteos Standard-Mix:
+  // In klaren, kalten Nächten lag der Standard-Mix mehrfach 2–3 °C zu warm und sagte Wolken voraus, die ausblieben.
+  const withModel = new URLSearchParams(params);
+  withModel.set("models", "icon_seamless");
+  let res = await fetch(`https://api.open-meteo.com/v1/forecast?${withModel}`, { signal });
+  // Falls das Modell für einen Ort nicht verfügbar ist: Standardmodell als Rückfall.
+  if (!res.ok) res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal });
   if (!res.ok) throw new Error("Die Wetterdaten konnten nicht geladen werden.");
   return res.json();
 }
@@ -227,7 +235,9 @@ export function prettyDate(dateKey: string, weekday: "long" | "short" = "long") 
   });
 }
 
-function rawHours(fc: Forecast): Omit<HourData, "risk">[] {
+type RawHour = Omit<HourData, "risk" | "ice">;
+
+function rawHours(fc: Forecast): RawHour[] {
   const h = fc.hourly;
   return h.time.map((time, i) => ({
     time,
@@ -260,7 +270,26 @@ export function glassCooling(h: Pick<HourData, "cloud" | "wind" | "precip">): nu
 /** Geschätzte Scheibentemperatur. */
 export const glassTemp = (h: Pick<HourData, "temp" | "cloud" | "wind" | "precip">) => h.temp - glassCooling(h);
 
-function hourRisk(h: Omit<HourData, "risk">, wetBonus: number): number {
+/**
+ * Frost-Gedächtnis: Eis auf der Scheibe baut sich auf, solange die Scheibe unter 0 °C liegt, und taut erst,
+ * wenn sie deutlich im Plus ist. So zählt auch Frost von 22 Uhr, wenn die Scheibe um 6 Uhr wärmer wirkt.
+ * `weight` ist der Anteil der Stunde (für Zwischenzeiten wie 6:15).
+ * Faustformel, nicht an Messungen geeicht: bei ca. −1 °C Scheibe und feuchter Luft entstehen etwa 25 Punkte
+ * pro Stunde, bei +2,5 °C Scheibe tauen etwa 30 Punkte pro Stunde.
+ */
+export function iceStep(prev: number, h: Pick<HourData, "temp" | "cloud" | "wind" | "precip" | "humidity">, weight = 1): number {
+  const g = glassTemp(h);
+  const moist = 0.5 + 0.5 * clamp((h.humidity - 60) / 35);
+  let gain = g < 0.5 ? 45 * clamp((0.5 - g) / 2.5) * moist : 0;
+  if (h.precip > 0 && g < 0.5) gain += Math.min(20, 8 + h.precip * 10);
+  const melt = g > 0.5 ? 14 * (g - 0.5) + 8 : 0;
+  return clamp(prev + (gain - melt) * weight, 0, 100);
+}
+
+/** So viel vom Eisstand (0–100) zählt als Risiko (0–100). */
+const ICE_TO_RISK = 0.85;
+
+function hourRisk(h: RawHour, wetBonus: number): number {
   // Entscheidend ist die Temperatur der Scheibe, nicht die der Luft.
   const g = glassTemp(h);
   let score = clamp((2 - g) / 6) * 60;
@@ -306,7 +335,7 @@ function interpolateDeparture(
   if (frac === 0) return { ...a };
   const b = scored[idx + 1] ?? a;
   const mix = (x: number, y: number) => x + (y - x) * frac;
-  const raw = {
+  const raw: RawHour = {
     time: `${dayKey}T${fmtClock(departMin)}`,
     hour,
     temp: round1(mix(a.temp, b.temp)),
@@ -317,7 +346,9 @@ function interpolateDeparture(
     cloud: Math.round(mix(a.cloud, b.cloud)),
     wind: Math.round(mix(a.wind, b.wind)),
   };
-  return { ...raw, risk: hourRisk(raw, wetBonus) };
+  // Eisstand: vom Stundenwert aus ein Stück weiter, mit den auf diese Minute interpolierten Werten.
+  const ice = iceStep(a.ice, raw, frac);
+  return { ...raw, ice: Math.round(ice), risk: Math.max(hourRisk(raw, wetBonus), Math.round(ICE_TO_RISK * ice)) };
 }
 
 export function analyze(fc: Forecast, offset: DayOffset, departInput: number = DEFAULT_DEPART): Analysis {
@@ -337,7 +368,12 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
   );
   const wetBonus = clamp(nightPrecip / 1.5) * 9;
 
-  const scored: HourData[] = all.map((h) => ({ ...h, risk: hourRisk(h, wetBonus) }));
+  // Die Nacht wird Stunde für Stunde durchgerechnet (Frost-Gedächtnis), nicht nur der Wert zur Abfahrt.
+  let ice = 0;
+  const scored: HourData[] = all.map((h) => {
+    ice = iceStep(ice, h);
+    return { ...h, ice: Math.round(ice), risk: Math.max(hourRisk(h, wetBonus), Math.round(ICE_TO_RISK * ice)) };
+  });
   const fallback: HourData = {
     time: `${dayKey}T07:00`,
     hour: 7,
@@ -348,15 +384,23 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
     code: 0,
     cloud: 50,
     wind: 0,
+    ice: 0,
     risk: 0,
   };
   const departure = interpolateDeparture(scored, dayKey, departMin, wetBonus, fallback);
 
-  // Kältester Moment der Nacht bis zur Abfahrt (inklusive Abfahrtszeitpunkt).
-  const scoredNight = [...scored.filter((h) => h.time.startsWith(dayKey) && h.hour * 60 <= departMin), departure];
-  const coldest = [...scoredNight].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
+  // Die ganze Nacht bis zur Abfahrt: ab 22 Uhr am Vorabend (inklusive Abfahrtszeitpunkt).
+  const nightScored = [
+    ...scored.filter((h) => h.time.startsWith(prevKey) && h.hour >= 22),
+    ...scored.filter((h) => h.time.startsWith(dayKey) && h.hour * 60 <= departMin),
+  ];
+  const nightWithDeparture = [...nightScored, departure];
+  const coldest = [...nightWithDeparture].sort((a, b) => a.temp - b.temp)[0] ?? fallback;
+  const coldestGlass = Math.min(...nightWithDeparture.map(glassTemp));
+  // Stunden, in denen die Scheibe rechnerisch unter 0 °C lag.
+  const frostHours = nightScored.filter((h) => glassTemp(h) < 0.3).length;
 
-  // Die Stunden kurz vor der Abfahrt (für die Anzeige des Verlaufs und die kälteste Scheibe).
+  // Die Stunden kurz vor der Abfahrt (für das Diagramm und „höchstes Risiko vor der Abfahrt“).
   const windowHours = [
     ...scored.filter(
       (h) =>
@@ -364,13 +408,10 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
     ),
     departure,
   ];
-  // Höchstes Risiko in den Stunden vor der Abfahrt (nur zur Anzeige) und kälteste Scheibe.
   const worst = [...windowHours].sort((a, b) => b.risk - a.risk)[0] ?? fallback;
-  const windowColdest = [...windowHours].sort((a, b) => glassTemp(a) - glassTemp(b))[0] ?? fallback;
-  const coldestGlass = glassTemp(windowColdest);
 
-  // Die Zahl gilt für die eingestellte Abfahrtszeit: das Risiko genau zu diesem Zeitpunkt,
-  // berechnet aus den auf diese Minute interpolierten Wetterwerten.
+  // Die Zahl gilt für die eingestellte Abfahrtszeit. Sie enthält den Eisstand aus der Nacht davor
+  // (departure.risk = Wert zur Abfahrt, mindestens aber der noch nicht getaute Frost).
   const score = departure.risk;
 
   const avgHumidity = Math.round(night.reduce((s, h) => s + h.humidity, 0) / Math.max(1, night.length));
@@ -384,12 +425,13 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
   const sunriseRaw = dailyIndex >= 0 ? fc.daily.sunrise[dailyIndex] : "";
   const sunrise = sunriseRaw ? sunriseRaw.slice(11, 16) : "–";
   const dailyMax = dailyIndex >= 0 ? fc.daily.temperature_2m_max[dailyIndex] : 8;
-  // „Taut ab“ nur, wenn es zur Abfahrt noch nicht mild genug ist.
+  // „Taut ab“: erste Stunde nach der Abfahrt, in der das Eis (fast) weg ist, nur wenn zur Abfahrt Eis liegt.
   const thaw =
-    departure.temp > 1.5
+    departure.ice < 20
       ? undefined
-      : scored.find((h) => h.time.startsWith(dayKey) && h.hour * 60 > departMin && h.hour <= 12 && h.temp > 1.5);
+      : scored.find((h) => h.time.startsWith(dayKey) && h.hour * 60 > departMin && h.hour <= 12 && h.ice < 15);
   const thawHour = thaw ? `${String(thaw.hour).padStart(2, "0")}:00` : null;
+  const nightStart = nightScored[0]?.time.slice(11, 16) ?? "22:00";
 
   const factors: Factor[] = [
     {
@@ -405,6 +447,21 @@ export function analyze(fc: Forecast, offset: DayOffset, departInput: number = D
             ? "Knapp über Null: Die Scheibe kann bei klarem Himmel noch unter den Gefrierpunkt rutschen."
             : "Zu mild für eine Eisschicht.",
       strength: clamp((3 - coldestGlass) / 7),
+      hint: "cold",
+    },
+    {
+      key: "frost",
+      label: "Eis über Nacht",
+      value: `Eisstand ${departure.ice}/100 · ${frostHours} Std. Frost`,
+      detail:
+        departure.ice >= 60
+          ? `Die Scheibe lag rechnerisch ${frostHours} Stunden unter 0 °C (seit ${nightStart} Uhr geprüft) und ist zur Abfahrt noch nicht aufgetaut.`
+          : departure.ice >= 20
+            ? "Etwas Reif entsteht und taut bis zur Abfahrt nur teilweise."
+            : frostHours > 0
+              ? "Die Scheibe war zwischendurch unter 0 °C, das Eis ist bis zur Abfahrt wieder getaut."
+              : "Die Scheibe bleibt über dem Gefrierpunkt, es entsteht kein Eis.",
+      strength: departure.ice / 100,
       hint: "cold",
     },
     {

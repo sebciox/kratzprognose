@@ -17,13 +17,25 @@ Die Abfahrtszeit ist wählbar (4:00 bis 10:00 Uhr, Standard 6:00 Uhr) und wird g
 
 ## Datenquellen
 
-- Wetter und Ortssuche: [Open-Meteo](https://open-meteo.com) (kostenlos, ohne Schlüssel, Modellwahl automatisch)
+- Wetter und Ortssuche: [Open-Meteo](https://open-meteo.com) (kostenlos, ohne Schlüssel). Wettermodell: DWD-ICON
+  (`icon_seamless`: 2 km in Mitteleuropa, sonst gröbere ICON-Modelle). Der Standard-Mix von Open-Meteo lag in
+  einer klaren, kalten Nacht (21.11.2026, Witten) 2–3 °C zu warm und sagte Wolken voraus, die ausblieben.
 - Ortsname beim GPS-Standort: BigDataCloud (reverse geocoding)
 - Schrift: Plus Jakarta Sans, lokal eingebunden (keine Google-Server)
 
-Der **Risiko-Score ist eine einfache Faustformel** aus Temperatur, Taupunkt, Luftfeuchte, Wolken, Wind und
-Nachtniederschlag (`src/lib/weather.ts`), keine Messung und nicht wissenschaftlich validiert.
-Stunden, die für „Heute“ schon vergangen sind, sind Modellwerte, keine Messwerte.
+## So wird gerechnet
+
+Der **Risiko-Score ist eine Faustformel**, keine Messung und nicht wissenschaftlich validiert (`src/lib/weather.ts`):
+
+1. **Scheibentemperatur:** Lufttemperatur minus Abstrahlung zum Himmel (bis ca. 3,8 °C bei klarem, ruhigem
+   Himmel, bei Wolken und Wind weniger). Deshalb kann die Scheibe vereisen, obwohl die Luft noch im Plus ist.
+2. **Frost-Gedächtnis:** Die Nacht wird Stunde für Stunde durchgerechnet, beginnend am Vorabend. Eis baut sich
+   auf, solange die Scheibe unter 0 °C liegt, und taut erst, wenn sie deutlich im Plus ist. Frost von 22 Uhr
+   zählt also noch um 6 Uhr, wenn er bis dahin nicht getaut ist.
+3. **Zahl zur Abfahrtszeit:** Höher von „Risiko zu dieser Stunde“ und „noch nicht getauter Eisstand“.
+
+Stunden, die für „Heute“ schon vergangen sind, sind Modellwerte, keine Messwerte. Die Prognose kann trotzdem
+danebenliegen (Wolken-Timing, Kaltluftseen): Nach einer klaren Nacht lohnt ein Blick auf die Scheibe.
 
 ## Entwicklung
 
