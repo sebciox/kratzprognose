@@ -27,6 +27,7 @@ import {
   Sunrise,
   Thermometer,
   ThermometerSnowflake,
+  ThermometerSun,
   Wind,
   X,
 } from "lucide-react";
@@ -195,6 +196,13 @@ function writeStored(key: string, value: unknown) {
   } catch {
     /* z. B. privater Modus – die App funktioniert auch ohne Speicher */
   }
+}
+
+/** Thermometer-Symbol passend zur Temperatur: Schneeflocke bei Frost, sonst ohne. */
+function TempIcon({ temp }: { temp: number }) {
+  if (temp <= 0.5) return <ThermometerSnowflake className="h-5 w-5 text-cyan-300" aria-hidden="true" />;
+  if (temp >= 20) return <ThermometerSun className="h-5 w-5 text-amber-300" aria-hidden="true" />;
+  return <Thermometer className="h-5 w-5 text-slate-300" aria-hidden="true" />;
 }
 
 function WeatherIcon({ code, className = "h-5 w-5" }: { code: number; className?: string }) {
@@ -380,31 +388,6 @@ function TempChart({
   );
 }
 
-function SnowBackground() {
-  const particles = useMemo(
-    () =>
-      Array.from({ length: 30 }, (_, i) => ({
-        left: `${(i * 37.7 + 4) % 100}%`,
-        size: `${2 + (i % 3)}px`,
-        duration: `${11 + ((i * 7) % 13)}s`,
-        delay: `${-((i * 3.1) % 20)}s`,
-        opacity: 0.18 + (i % 5) * 0.11,
-      })),
-    []
-  );
-  return (
-    <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
-      {particles.map((p, i) => (
-        <span
-          key={i}
-          className="snow-particle"
-          style={{ left: p.left, width: p.size, height: p.size, animationDuration: p.duration, animationDelay: p.delay, opacity: p.opacity }}
-        />
-      ))}
-    </div>
-  );
-}
-
 export default function App() {
   const [home, setHome] = useState<Place>(() => readStored(STORAGE_HOME, DEFAULT_HOME));
   const [gps, setGps] = useState<Place | null>(() => readStored<Place | null>(STORAGE_GPS, null));
@@ -518,6 +501,8 @@ export default function App() {
     }
   }, [forecast, depart]);
   const analysis: Analysis | null = days[offset] ?? null;
+  // Aktuelle Temperatur laut Open-Meteo; ohne Wert die Stundenprognose zur Abfahrtszeit.
+  const nowTemp = forecast?.current?.temperature_2m ?? analysis?.departure.temp ?? 0;
 
   const resetView = () => {
     setQuery("");
@@ -604,7 +589,6 @@ export default function App() {
         <div className="absolute -right-40 top-[640px] h-[420px] w-[420px] rounded-full bg-indigo-500/10 blur-[130px]" />
         <div className="grid-lines absolute inset-0" />
       </div>
-      <SnowBackground />
 
       {pull > 0 && (
         <div
@@ -759,12 +743,11 @@ export default function App() {
                 <p className="mt-5 text-center text-2xl font-extrabold tracking-tight" style={{ color: verdict.color }}>
                   {verdict.badge}
                 </p>
-                {/* Nur am aktuellen Tag: die Temperatur zur eingestellten Abfahrtszeit. */}
+                {/* Nur am aktuellen Tag: die Temperatur jetzt. Das Symbol folgt der Temperatur. */}
                 {offset === 0 && (
                   <p className="mt-2 flex items-center justify-center gap-2 text-xl font-bold tabular-nums text-white">
-                    <ThermometerSnowflake className="h-5 w-5 text-cyan-300" aria-hidden="true" />
-                    {fmtTemp(analysis.departure.temp)}
-                    <span className="text-base font-semibold text-slate-400">um {analysis.departLabel} Uhr</span>
+                    <TempIcon temp={nowTemp} />
+                    {fmtTemp(nowTemp)}
                   </p>
                 )}
               </div>
