@@ -7,6 +7,8 @@
 }
 
 html {
+  /* Auch unter der Statusleiste und dem Home-Balken (iPhone) dunkel, falls die Seite kurz kleiner ist. */
+  background: #050b19;
   scroll-behavior: smooth;
   /* Kein Federn am Seitenanfang: das Herunterziehen zum Aktualisieren macht die App selbst. */
   overscroll-behavior-y: none;
@@ -21,6 +23,16 @@ body {
   /* Kein Doppeltipp-Zoom und kein seitliches Verschieben auf dem Handy. */
   touch-action: manipulation;
   overflow-x: hidden;
+}
+
+/*
+ * Volle Bildschirmhöhe. 100svh wäre die kleinste Höhe (alle Safari-Leisten eingeblendet) und ließe unten
+ * einen Streifen frei, sobald die Leisten einklappen. 100dvh folgt der sichtbaren Fläche; 100vh ist der
+ * Rückfall für sehr alte Browser.
+ */
+.app-full {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .glass {

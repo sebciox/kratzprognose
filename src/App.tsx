@@ -214,7 +214,7 @@ function RiskGauge({ score, level }: { score: number; level: RiskLevel }) {
   const radius = 84;
   const circumference = 2 * Math.PI * radius;
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[min(440px,42dvh)]">
+    <div className="relative mx-auto aspect-square w-full max-w-[min(440px,40dvh)]">
       <div
         className="absolute inset-6 rounded-full blur-3xl transition-colors duration-700"
         style={{ background: VERDICT[level].glow, opacity: 0.55 }}
@@ -597,7 +597,7 @@ export default function App() {
   const selectedHour = analysis?.morningHours.find((h) => h.time === selectedTime) ?? analysis?.departure ?? null;
 
   return (
-    <div className="relative min-h-[100svh] overflow-hidden bg-[#050b19] text-slate-100">
+    <div className="app-full relative overflow-hidden bg-[#050b19] text-slate-100">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_50%_at_50%_-10%,rgba(56,140,220,0.28),transparent_70%)]" />
         <div className="absolute -left-40 top-64 h-[420px] w-[420px] rounded-full bg-sky-500/10 blur-[120px]" />
@@ -617,7 +617,7 @@ export default function App() {
       )}
 
       <div
-        className="relative mx-auto flex min-h-[100svh] max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6"
+        className="app-full relative mx-auto flex max-w-3xl flex-col px-4 pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] pt-[calc(env(safe-area-inset-top)_+_1rem)] sm:px-6"
         style={{ transform: pull > 0 ? `translateY(${pull}px)` : undefined, transition: pull > 0 ? "none" : "transform 0.25s ease" }}
       >
         {/* Oben: Ort · Uhrzeit · Tag. Antippen zum Ändern. */}
@@ -751,7 +751,7 @@ export default function App() {
         {/* Mitte: der Risiko-Kreis, fast bildschirmbreit */}
         <div className="flex flex-1 flex-col items-center justify-center py-6">
           {loading && !analysis ? (
-            <div className="aspect-square w-full max-w-[min(440px,42dvh)] animate-pulse rounded-full border-[10px] border-white/10" />
+            <div className="aspect-square w-full max-w-[min(440px,40dvh)] animate-pulse rounded-full border-[10px] border-white/10" />
           ) : analysis ? (
             <>
               <div className="animate-rise flex w-full flex-col items-center" key={`${place.id}-${offset}`}>
@@ -759,6 +759,14 @@ export default function App() {
                 <p className="mt-5 text-center text-2xl font-extrabold tracking-tight" style={{ color: verdict.color }}>
                   {verdict.badge}
                 </p>
+                {/* Nur am aktuellen Tag: die Temperatur zur eingestellten Abfahrtszeit. */}
+                {offset === 0 && (
+                  <p className="mt-2 flex items-center justify-center gap-2 text-xl font-bold tabular-nums text-white">
+                    <ThermometerSnowflake className="h-5 w-5 text-cyan-300" aria-hidden="true" />
+                    {fmtTemp(analysis.departure.temp)}
+                    <span className="text-base font-semibold text-slate-400">um {analysis.departLabel} Uhr</span>
+                  </p>
+                )}
               </div>
               <DayStrip days={days} selected={offset} onSelect={(o) => { setOffset(o); setSelectedTime(null); }} />
             </>
