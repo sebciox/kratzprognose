@@ -212,12 +212,6 @@ export function normalizeDepart(value: unknown): number {
   return Math.min(DEPART_MAX, Math.max(DEPART_MIN, stepped));
 }
 
-/** Bis eine Stunde nach der Abfahrt zeigt die App standardmäßig „Heute“, danach „Morgen“. */
-export function defaultOffset(timeZone: string, departMin: number, now = new Date()): DayOffset {
-  const { hour, minute } = localParts(safeTimeZone(timeZone), now);
-  return hour * 60 + minute < departMin + 60 ? 0 : 1;
-}
-
 export function localDateKey(timeZone: string, offset: number, now = new Date()): string {
   const { year, month, day } = localParts(safeTimeZone(timeZone), now);
   const base = new Date(Date.UTC(year, month - 1, day, 12));

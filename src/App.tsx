@@ -37,7 +37,6 @@ import {
   createDemoForecast,
   dayWords,
   DEFAULT_DEPART,
-  defaultOffset,
   DEPART_MAX,
   DEPART_MIN,
   DEPART_STEP,
@@ -82,13 +81,6 @@ const DEFAULT_HOME: Place = {
 const STALE_AFTER_MS = 30 * 60 * 1000;
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const deviceTimeZone = () => {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin";
-  } catch {
-    return "Europe/Berlin";
-  }
-};
 
 const VERDICT: Record<
   RiskLevel,
@@ -400,7 +392,8 @@ export default function App() {
   const [demo, setDemo] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [depart, setDepart] = useState<number>(() => normalizeDepart(readStored(STORAGE_DEPART, DEFAULT_DEPART)));
-  const [offset, setOffset] = useState<DayOffset>(() => defaultOffset(deviceTimeZone(), depart));
+  // Die App startet immer mit „Heute“.
+  const [offset, setOffset] = useState<DayOffset>(0);
   const lastLoadedAt = useRef(0);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
@@ -445,18 +438,18 @@ export default function App() {
   }, [place, reloadToken]);
 
   // Die installierte Web-App bleibt über Nacht im Hintergrund. Beim Zurückkehren
-  // (z. B. um 5:30) neu laden und den passenden Standardtag wählen.
+  // (z. B. um 5:30) neu laden und wieder „Heute“ anzeigen.
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
       if (Date.now() - lastLoadedAt.current < STALE_AFTER_MS) return;
-      setOffset(defaultOffset(deviceTimeZone(), depart));
+      setOffset(0);
       setSelectedTime(null);
       setReloadToken((n) => n + 1);
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [depart]);
+  }, []);
 
   useEffect(() => {
     const q = query.trim();

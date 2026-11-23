@@ -1,7 +1,7 @@
 # Kratzprognose
 
 Sagt anhand der Wetterprognose, ob du die Autoscheibe **heute** oder **morgen früh** kratzen musst.
-Die Abfahrtszeit ist wählbar (4:00 bis 10:00 Uhr, Standard 6:00 Uhr) und wird gemerkt. Die Einschätzung gilt für die Nacht bis zu dieser Uhrzeit. Bis eine Stunde nach der Abfahrt startet die App mit „Heute“, danach mit „Morgen“. Unter dem großen Kreis zeigt eine Reihe kleiner Kreise die Einschätzung für heute und die nächsten vier Tage; Antippen wählt den Tag. Ort und Abfahrtszeit stellst du über die obere Zeile ein. Zum Aktualisieren die Ansicht oben nach unten ziehen.
+Die Abfahrtszeit ist wählbar (4:00 bis 10:00 Uhr, Standard 6:00 Uhr) und wird gemerkt. Die Einschätzung gilt für die Nacht bis zu dieser Uhrzeit. Die App startet immer mit „Heute“; „Morgen“ und die weiteren Tage wählst du unter dem Kreis. Unter dem großen Kreis zeigt eine Reihe kleiner Kreise die Einschätzung für heute und die nächsten vier Tage; Antippen wählt den Tag. Ort und Abfahrtszeit stellst du über die obere Zeile ein. Zum Aktualisieren die Ansicht oben nach unten ziehen.
 
 ## Aufruf am Handy
 
